@@ -1,0 +1,1 @@
+"""SwingSight AI core package."""

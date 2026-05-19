@@ -1,0 +1,38 @@
+paths:
+  data_dir: data
+  models_dir: models
+  outputs_dir: outputs
+  reports_dir: reports
+
+club_detection:
+  enabled: true
+  model_type: yolov8
+  model_path: models/club_detector.pt
+  confidence_threshold: 0.4
+  categories:
+    - driver_wood
+    - hybrid
+    - iron_wedge
+
+pose_estimation:
+  backend: mediapipe
+  confidence_threshold: 0.5
+
+metrics:
+  smoothing_window: 5
+  normalize_by: torso
+
+feedback:
+  driver_wood:
+    spine_angle_range: [30, 45]
+    head_movement_max_cm: 5
+  hybrid:
+    spine_angle_range: [25, 40]
+    head_movement_max_cm: 4
+  iron_wedge:
+    spine_angle_range: [20, 35]
+    head_movement_max_cm: 3
+
+app:
+  max_video_seconds: 12
+  key_frame_stride: 3
