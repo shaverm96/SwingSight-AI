@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SwingSight AI Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Space+Grotesk:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar card-glass">
+        <div class="brand">
+          <div class="brand-mark">S</div>
+          <div>
+            <h1>SwingSight AI</h1>
+            <p>Club-aware swing coach</p>
+          </div>
+        </div>
+
+        <nav class="menu">
+          <a class="active" href="#">Session</a>
+          <a href="#">Library</a>
+          <a href="#">Reports</a>
+          <a href="#">Settings</a>
+        </nav>
+
+        <section class="upload-card">
+          <h2>Upload Swing</h2>
+          <label class="drop-zone" for="videoInput">
+            <span class="drop-title">Drop video here</span>
+            <span class="drop-hint">or click to browse (mp4, mov, webm)</span>
+          </label>
+          <input id="videoInput" class="hidden-input" type="file" accept="video/*" />
+
+          <div class="upload-mini">
+            <label class="drop-zone" for="clubImageInput">
+              <span class="drop-title">Optional club photo</span>
+              <span class="drop-hint">adds club detection context</span>
+            </label>
+            <input id="clubImageInput" class="hidden-input" type="file" accept="image/*" />
+          </div>
+
+          <div class="field-group">
+            <label for="clubCategory">Club Category</label>
+            <select id="clubCategory">
+              <option value="">Auto-detect</option>
+              <option value="driver_wood">Driver / Wood</option>
+              <option value="hybrid">Hybrid</option>
+              <option value="iron_wedge">Iron / Wedge</option>
+            </select>
+          </div>
+
+          <div class="button-col">
+            <button id="uploadButton" class="button">Upload Files</button>
+            <button id="analyzeButton" class="button primary" disabled>Record Swing</button>
+            <div class="button-row">
+              <button id="downloadPdfButton" class="button" disabled>Download PDF</button>
+              <button id="downloadDocxButton" class="button" disabled>Download DOCX</button>
+            </div>
+          </div>
+
+          <p id="statusText" class="status">Ready to capture your swing.</p>
+        </section>
+      </aside>
+
+      <main class="content-shell">
+        <header class="topbar card-glass">
+          <div>
+            <p class="eyebrow">Session Status</p>
+            <h2>Live Analysis Pipeline</h2>
+          </div>
+          <div class="session-status">
+            <div class="status-item">
+              <span class="tick">1</span>
+              <div>
+                <p class="eyebrow">Club detected</p>
+                <strong id="finalClubValue">--</strong>
+              </div>
+            </div>
+            <div class="status-item">
+              <span class="tick">2</span>
+              <div>
+                <p class="eyebrow">Frames</p>
+                <strong id="frameCountValue">0</strong>
+              </div>
+            </div>
+            <div class="status-item">
+              <span class="tick">3</span>
+              <div>
+                <p class="eyebrow">Analysis ID</p>
+                <strong id="analysisIdValue">--</strong>
+              </div>
+            </div>
+          </div>
+        </header>
+
+        <section class="main-grid">
+          <article class="video-panel card-glass">
+            <div class="panel-head">
+              <h3>Video Review</h3>
+              <span class="badge">Local Preview</span>
+            </div>
+            <video id="videoPreview" controls muted playsinline></video>
+
+            <div class="video-actions">
+              <button id="watchReplayButton" class="button" disabled>Watch Replay</button>
+              <button id="generateReportButton" class="button" disabled>Generate Report</button>
+              <button id="recordAnotherButton" class="button primary">Record Another Swing</button>
+            </div>
+          </article>
+
+          <aside class="score-panel">
+            <div class="score-ring-card card-glass">
+              <p>Overall Swing Score</p>
+              <div class="score-ring">
+                <div>
+                  <span id="overallScoreValue">--</span>
+                  <small>/ 100</small>
+                </div>
+              </div>
+              <div id="overallGrade" class="score-grade">Awaiting Analysis</div>
+            </div>
+
+            <div class="club-preview-card card-glass">
+              <h4>Club Photo</h4>
+              <img id="clubPreview" alt="Club preview" />
+            </div>
+
+            <div class="summary-card card-glass">
+              <h4>Session Summary</h4>
+              <dl>
+                <div>
+                  <dt>Analysis ID</dt>
+                  <dd>See status panel</dd>
+                </div>
+                <div>
+                  <dt>Final Club</dt>
+                  <dd>See status panel</dd>
+                </div>
+                <div>
+                  <dt>Pose Frames</dt>
+                  <dd>See status panel</dd>
+                </div>
+              </dl>
+            </div>
+          </aside>
+        </section>
+
+        <section class="insight-grid">
+          <article class="card-glass">
+            <h4>Key Metrics</h4>
+            <ul id="metricList" class="metric-list"></ul>
+          </article>
+          <article class="card-glass">
+            <h4>Coach Feedback</h4>
+            <ul id="feedbackList" class="feedback-list"></ul>
+          </article>
+          <article class="card-glass debug-card">
+            <h4>Raw Summary</h4>
+            <pre id="summaryOutput" class="output-box"></pre>
+            <h4>Raw Metrics</h4>
+            <pre id="metricsOutput" class="output-box"></pre>
+          </article>
+        </section>
+      </main>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+  </body>
+</html>
