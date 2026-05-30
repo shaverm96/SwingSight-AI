@@ -34,3 +34,5 @@ outputs/*
 !outputs/README.md
 reports/*
 !reports/README.md
+uploads/*
+!uploads/README.md
