@@ -153,17 +153,20 @@ analyzeButton.addEventListener("click", async () => {
     for (let i = 0; i < maxAttempts; i++) {
       const resp = await postFrameForClubDetection();
       clubResult = resp.result || resp;
-      if (clubResult && clubResult.confidence >= 0.6) break;
+      const status = clubResult?.status || (clubResult?.confidence >= 0.6 ? "confirmed" : "uncertain");
+      if (status === "confirmed") break;
       await new Promise((r) => setTimeout(r, 700));
     }
 
-    if (!clubResult || clubResult.confidence < 0.5) {
-      updateStatus("Could not confirm club. Please hold the butt/end of the club closer to the camera.");
+    if (!clubResult || clubResult.status !== "confirmed") {
+      const hint = clubResult?.reasoning ? ` (${clubResult.reasoning})` : "";
+      updateStatus(`Could not confirm club. Please hold the club end closer to the camera.${hint}`);
       state.workflowState = "idle";
       return;
     }
 
-    updateStatus(`Club confirmed as: ${clubResult.category} (conf: ${Number(clubResult.confidence).toFixed(2)})`);
+    const clubLabel = clubResult.predicted_club || clubResult.category || "Unknown";
+    updateStatus(`Club confirmed as: ${clubLabel} (conf: ${Number(clubResult.confidence).toFixed(2)})`);
     state.workflowState = "club_confirmed";
 
     // Body detection

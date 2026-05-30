@@ -19,6 +19,16 @@ pose_estimation:
   backend: mediapipe
   confidence_threshold: 0.5
 
+club_recognition:
+  yolo_model_path: models/club_detector.pt
+  yolo_class_name:
+  detector_confidence_threshold: 0.4
+  confirm_threshold: 0.6
+  wood_aspect_threshold: 1.15
+  driver_area_threshold: 0.08
+  fairway_area_threshold: 0.05
+  ocr_backend: auto
+
 metrics:
   smoothing_window: 5
   normalize_by: torso

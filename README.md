@@ -44,6 +44,7 @@ SwingSight-AI/
     swingsight/
       __init__.py
       club_detection.py
+      club_recognition.py
       config.py
       feedback.py
       io_utils.py
@@ -102,6 +103,58 @@ The dashboard JavaScript calls backend APIs with `fetch`:
 4. Render returned JSON metrics, score, and feedback in the UI
 5. Request PDF/DOCX generation and trigger local file download
 
+## Club Recognition Decision Tree
+
+The club recognition pipeline is staged and local-first. It takes a camera frame, crops the club head, then branches based on a broad category classifier:
+
+1. Detect club head region (YOLOv8 stub)
+2. Classify broad category
+  - Wood-style
+  - Iron/Wedge-style
+3. Branch by category
+  - Wood-style: estimate head size
+    - Large head -> Driver
+    - Medium head -> Fairway Wood
+    - Small head -> Hybrid
+  - Iron/Wedge-style: read marking via OCR
+    - 1-9 -> Iron (e.g., 7 Iron)
+    - > 40 -> Wedge (e.g., 56° Wedge)
+    - S/SW/A/AW/P/PW -> Wedge
+4. Confirm club with confidence threshold and report result to the UI
+
+## Club Recognition Module Structure
+
+The staged pipeline is implemented in [src/swingsight/club_recognition.py](src/swingsight/club_recognition.py):
+
+- `detect_club_head()` -> YOLOv8 detection stub (replace with weights in `models/`)
+- `classify_broad_category()` -> CNN stub for Wood vs Iron/Wedge
+- `estimate_wood_size()` -> Driver/Fairway/Hybrid heuristic
+- `read_club_marking()` -> OCR stub (EasyOCR/Tesseract if installed)
+- `interpret_marking()` -> rule-based iron/wedge mapping
+- `recognize_club_from_frame()` -> orchestrates the decision tree
+
+## Club Recognition API Response (Example)
+
+```json
+{
+  "upload_id": "2c5b0f",
+  "file_name": "frame.png",
+  "result": {
+    "status": "confirmed",
+    "detected_category": "Wood",
+    "predicted_club": "Driver",
+    "confidence": 0.72,
+    "reasoning": "wide head aspect detected; large rounded head detected",
+    "bbox": [120, 80, 420, 320],
+    "ocr": null,
+    "sources": {
+      "detector": "yolov8",
+      "broad_classifier": "cnn_stub"
+    }
+  }
+}
+```
+
 ## Installation
 
 Create and activate a virtual environment, then install dependencies:
@@ -152,6 +205,11 @@ Notes:
 - The current club/body detectors are placeholders. Replace with YOLOv8/CNN/OCR and YOLOv8-pose for production accuracy.
 - The guided capture records a short clip automatically (approx 5s); this can be adjusted in `src/webapp/static/js/dashboard.js`.
 - The entire workflow is local-first. No credentials, cloud storage, or external services are used by default.
+
+Optional OCR dependencies (not required unless you want club marking detection):
+
+- `easyocr` (recommended for stamped markings)
+- `pytesseract` (fallback)
 
 ## Notes on Scope
 

@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 
 from swingsight.club_detection import CLUB_CATEGORIES, detect_club_category
+from swingsight.club_recognition import predicted_to_category, recognize_club_from_frame
 from swingsight.feedback import generate_club_feedback
 from swingsight.metrics import compute_swing_metrics
 from swingsight.pose_estimation import run_pose_estimation
@@ -18,15 +19,17 @@ def run_club_detection(club_image_path: Optional[str], config: Dict) -> Dict:
     if not club_image_path:
         return {"category": CLUB_CATEGORIES[0], "confidence": 0.0, "source": "manual_default"}
 
-    with Path(club_image_path).open("rb") as image_file:
-        category, confidence = detect_club_category(image_file, config)
+    recognition = recognize_club_from_frame(club_image_path, config)
+    detected_category = recognition.get("detected_category", "Iron/Wedge")
+    broad_category = "wood" if detected_category.lower().startswith("wood") else "iron_wedge"
+    category = predicted_to_category(recognition.get("predicted_club"), broad_category)
 
-    # TODO: Replace with real YOLOv8 bbox output and confidence from detector inference.
     return {
         "category": category,
-        "confidence": float(confidence),
-        "bbox": None,
-        "source": "yolov8_stub",
+        "confidence": float(recognition.get("confidence", 0.0)),
+        "bbox": recognition.get("bbox"),
+        "source": recognition.get("sources", {}).get("detector", "club_recognition"),
+        "recognition": recognition,
     }
 
 
@@ -35,7 +38,11 @@ def detect_club_from_frame(frame_path: str, config: Dict) -> Dict:
 
     Placeholder: calls run_club_detection which currently returns a dummy result.
     """
-    return run_club_detection(frame_path, config)
+    recognition = recognize_club_from_frame(frame_path, config)
+    detected_category = recognition.get("detected_category", "Iron/Wedge")
+    broad_category = "wood" if detected_category.lower().startswith("wood") else "iron_wedge"
+    recognition["category"] = predicted_to_category(recognition.get("predicted_club"), broad_category)
+    return recognition
 
 
 def check_body_visibility_from_frame(frame_path: str, config: Dict) -> Dict:
