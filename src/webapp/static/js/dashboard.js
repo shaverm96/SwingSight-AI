@@ -28,6 +28,9 @@ const uploadButton = document.getElementById("uploadButton");
 const analyzeButton = document.getElementById("analyzeButton");
 const downloadPdfButton = document.getElementById("downloadPdfButton");
 const downloadDocxButton = document.getElementById("downloadDocxButton");
+const watchReplayButton = document.getElementById("watchReplayButton");
+const generateReportButton = document.getElementById("generateReportButton");
+const recordAnotherButton = document.getElementById("recordAnotherButton");
 
 videoInput.addEventListener("change", () => {
   const file = videoInput.files[0];
@@ -195,7 +198,8 @@ analyzeButton.addEventListener("click", async () => {
     fd.append("video", videoBlob, "swing.webm");
     const uploadResp = await fetch("/api/record-swing", { method: "POST", body: fd });
     const uploadPayload = await uploadResp.json();
-    state.videoUploadId = uploadPayload.upload_id;
+      state.videoUploadId = uploadPayload.upload_id;
+      state.lastPreviewUrl = uploadPayload.preview_url || `/uploads/${uploadPayload.file_name}`;
 
     // Trigger analysis
     state.workflowState = "analyzing";
@@ -215,6 +219,8 @@ analyzeButton.addEventListener("click", async () => {
     state.workflowState = "results";
     downloadPdfButton.disabled = false;
     downloadDocxButton.disabled = false;
+    if (watchReplayButton) watchReplayButton.disabled = false;
+    if (generateReportButton) generateReportButton.disabled = false;
   } catch (err) {
     console.error(err);
     updateStatus("Guided capture failed. You can still upload a video for analysis.");
@@ -375,4 +381,56 @@ function toTitleCase(text) {
     .split(" ")
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
+}
+
+// Watch replay handler: load last recorded preview URL into player
+if (watchReplayButton) {
+  watchReplayButton.addEventListener("click", () => {
+    if (!state.lastPreviewUrl) {
+      updateStatus("No recorded swing available. Record one first.");
+      return;
+    }
+    videoPreview.srcObject = null;
+    videoPreview.src = state.lastPreviewUrl;
+    videoPreview.play();
+    updateStatus("Playing recorded swing.");
+  });
+}
+
+// Generate report shortcut — opens the report generation endpoint
+if (generateReportButton) {
+  generateReportButton.addEventListener("click", async () => {
+    if (!state.analysisId) {
+      updateStatus("Run an analysis before generating a report.");
+      return;
+    }
+    updateStatus("Generating PDF report...");
+    const resp = await fetch(`/api/reports/${state.analysisId}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ format: "pdf" }),
+    });
+    const payload = await resp.json();
+    if (payload.download_url) {
+      window.location.href = payload.download_url;
+    } else {
+      updateStatus("Report generation failed.");
+    }
+  });
+}
+
+// Record another swing: reset state and re-initialize camera
+if (recordAnotherButton) {
+  recordAnotherButton.addEventListener("click", async () => {
+    state.workflowState = "idle";
+    state.analysisId = null;
+    state.videoUploadId = null;
+    state.lastPreviewUrl = null;
+    downloadPdfButton.disabled = true;
+    downloadDocxButton.disabled = true;
+    if (watchReplayButton) watchReplayButton.disabled = true;
+    if (generateReportButton) generateReportButton.disabled = true;
+    updateStatus("Ready to record another swing. Click Record Swing.");
+    await initCamera();
+  });
 }

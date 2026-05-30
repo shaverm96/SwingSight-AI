@@ -224,6 +224,31 @@ body {
   gap: 0.8rem;
 }
 
+.session-status {
+  display: flex;
+  gap: 1rem;
+  padding: 0.6rem;
+  align-items: center;
+}
+
+.status-item {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+  color: #bfeec2;
+}
+
+.status-item .tick {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #0f2a10, #18361c);
+  display: grid;
+  place-items: center;
+  color: #9ff28a;
+  font-weight: 700;
+}
+
 .eyebrow {
   margin: 0;
   color: var(--muted);
@@ -365,6 +390,19 @@ body {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 1rem;
+}
+
+.video-actions {
+  display: flex;
+  gap: 1rem;
+  margin-top: 1rem;
+  align-items: center;
+}
+
+.video-actions .button {
+  flex: 1 1 auto;
+  padding: 1rem 1.2rem;
+  font-size: 1rem;
 }
 
 .insight-grid > article {

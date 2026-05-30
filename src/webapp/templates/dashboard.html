@@ -75,7 +75,14 @@
           </div>
         </header>
 
-        <section class="main-grid">
+        <section class="status-and-main">
+          <div class="session-status card-glass">
+            <div class="status-item"><span class="tick">✔</span><div>Club Detected<br/><strong id="statusClub">-</strong></div></div>
+            <div class="status-item"><span class="tick">✔</span><div>Swing Completed<br/><strong id="statusSwing">-</strong></div></div>
+            <div class="status-item"><span class="tick">✔</span><div>Analysis Ready<br/><strong id="statusAnalysis">-</strong></div></div>
+          </div>
+
+          <section class="main-grid">
           <article class="video-panel card-glass">
             <div class="panel-head">
               <h3>Video Review</h3>
@@ -120,6 +127,12 @@
             </article>
           </aside>
         </section>
+
+        <div class="video-actions">
+          <button id="watchReplayButton" class="button">Watch Replay</button>
+          <button id="generateReportButton" class="button">Generate Report</button>
+          <button id="recordAnotherButton" class="button primary">Record Another Swing</button>
+        </div>
 
         <section class="insight-grid">
           <article class="card-glass">
