@@ -14,6 +14,12 @@ const statusText = document.getElementById("statusText");
 const summaryOutput = document.getElementById("summaryOutput");
 const metricsOutput = document.getElementById("metricsOutput");
 const feedbackList = document.getElementById("feedbackList");
+const metricList = document.getElementById("metricList");
+const overallScoreValue = document.getElementById("overallScoreValue");
+const overallGrade = document.getElementById("overallGrade");
+const finalClubValue = document.getElementById("finalClubValue");
+const frameCountValue = document.getElementById("frameCountValue");
+const analysisIdValue = document.getElementById("analysisIdValue");
 
 const uploadButton = document.getElementById("uploadButton");
 const analyzeButton = document.getElementById("analyzeButton");
@@ -98,6 +104,7 @@ analyzeButton.addEventListener("click", async () => {
 
     renderSummary(result);
     renderMetrics(result.metrics || {});
+    renderMetricList(result.metrics || {});
     renderFeedback(result.feedback || []);
 
     downloadPdfButton.disabled = false;
@@ -173,10 +180,51 @@ function renderSummary(result) {
     body_tracking: result.body_tracking,
   };
   summaryOutput.textContent = JSON.stringify(summary, null, 2);
+
+  if (analysisIdValue) {
+    analysisIdValue.textContent = result.analysis_id || "-";
+  }
+  if (finalClubValue) {
+    finalClubValue.textContent = result.final_club_category || "-";
+  }
+  if (frameCountValue) {
+    frameCountValue.textContent = `${result.pose_frame_count || 0}`;
+  }
+
+  const score = result?.score?.overall_score;
+  if (overallScoreValue) {
+    overallScoreValue.textContent = Number.isFinite(score) ? `${Math.round(score)}` : "--";
+  }
+  if (overallGrade) {
+    overallGrade.textContent = scoreToGrade(score);
+  }
 }
 
 function renderMetrics(metrics) {
   metricsOutput.textContent = JSON.stringify(metrics, null, 2);
+}
+
+function renderMetricList(metrics) {
+  if (!metricList) {
+    return;
+  }
+
+  metricList.innerHTML = "";
+  const entries = Object.entries(metrics);
+  if (!entries.length) {
+    const li = document.createElement("li");
+    li.textContent = "No metrics available yet.";
+    metricList.appendChild(li);
+    return;
+  }
+
+  for (const [name, value] of entries) {
+    const li = document.createElement("li");
+    const normalized = Number(value);
+    const displayValue = Number.isFinite(normalized) ? normalized.toFixed(2) : value;
+    li.textContent = `${toTitleCase(name)}: ${displayValue}`;
+    metricList.appendChild(li);
+  }
 }
 
 function renderFeedback(items) {
@@ -197,4 +245,28 @@ function renderFeedback(items) {
 
 function updateStatus(message) {
   statusText.textContent = message;
+}
+
+function scoreToGrade(score) {
+  if (!Number.isFinite(score)) {
+    return "Awaiting Analysis";
+  }
+  if (score >= 90) {
+    return "Excellent";
+  }
+  if (score >= 80) {
+    return "Strong";
+  }
+  if (score >= 70) {
+    return "Improving";
+  }
+  return "Needs Work";
+}
+
+function toTitleCase(text) {
+  return text
+    .replaceAll("_", " ")
+    .split(" ")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }
