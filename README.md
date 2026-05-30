@@ -2,196 +2,146 @@
 
 ## Project Overview
 
-SwingSight AI is a computer vision and deep learning project that analyzes golf swing mechanics using video-based pose estimation and club-aware feedback logic. The system first identifies or confirms the golf club category from an image, then processes a swing video to extract key body mechanics such as posture, head movement, knee flex, shoulder turn, hip turn, balance, and a basic tempo estimate. Feedback is adjusted based on club category so that a driver swing is evaluated differently than an iron or wedge swing.
+SwingSight AI analyzes golf swings from local video using computer vision and modular AI components. The dashboard runs as a **local web app** (Flask backend + HTML/CSS/JavaScript frontend) while keeping the same project goals and model stack:
 
-This project is scoped for a master’s-level AI and Deep Learning course. The MVP focuses on a polished, demo-friendly system with clear metrics and interpretable feedback in a Streamlit dashboard.
+- Club/head detection using YOLOv8 object detection
+- Club category classification using a CNN
+- Number/loft recognition using OCR or custom image classification
+- Pose estimation using YOLOv8-pose
+- Video processing using OpenCV
+- Metrics/scoring using pandas, NumPy, and scikit-learn
+- Report output using PDF/Word export
+- Body-part tracking for feet, knees, hips, spine angle, shoulders, elbows, hands, neck, and head
 
----
+This project is local-first and intentionally scoped for research/demo workflows, not production deployment.
 
-## Problem Statement
+## Local Web Architecture (Recommended)
 
-Golf swing analysis is often expensive, subjective, or dependent on specialized equipment. Many golfers record swings with phones but lack tools that turn video into measurable mechanics. SwingSight AI bridges that gap by using computer vision to extract swing metrics from ordinary video and by applying club-aware expectations.
+**Recommended stack: Flask + server-rendered HTML/CSS/JavaScript**
 
----
+Why Flask is a strong fit for this project:
 
-## Objectives
+- Simple local setup and low overhead for single-user workflows
+- Easy static/template integration for dashboard UI
+- Straightforward REST endpoints for upload, analysis, and report export
+- Keeps Python-centric AI pipeline modular and easy to debug
 
-1. Build a video processing pipeline for golf swing analysis.
-2. Use pose estimation to track golfer body landmarks.
-3. Extract meaningful swing metrics from video frames.
-4. Add a pre-swing club identification or confirmation step.
-5. Generate club-aware feedback and scoring.
-6. Present results in a clean Streamlit dashboard.
+FastAPI is also excellent, but Flask is better here for a lightweight local dashboard foundation where synchronous request flow and simple template/static serving are enough.
 
----
-
-## MVP Scope
-
-### MVP Features
-
-- Club image upload
-- Broad club category detection or manual confirmation
-- Supported club categories:
-  - Driver / wood-style club
-  - Hybrid
-  - Iron / wedge-style club
-- Manual exact-club confirmation via dropdown
-- Swing video upload
-- Pose estimation on swing video
-- Key swing metric calculation
-- Club-specific feedback rules
-- Streamlit dashboard
-- Annotated key frames or video
-- Swing scorecard and recommendations
-
----
-
-## Stretch Goals
-
-- Exact club number recognition using OCR or classification
-- Automatic swing phase detection
-- Reference swing comparison against a skilled golfer
-- Downloadable PDF or Word swing report
-- Real-time webcam club scan
-- LLM-generated coaching summary grounded only in calculated metrics
-
----
-
-## System Architecture
-
-```text
-User Input
-   |
-   |-- Club Image Upload / Manual Club Selection
-   |        |
-   |        |-- Club Detection Model
-   |        |-- Club Category Prediction
-   |        |-- Manual Confirmation Fallback
-   |
-   |-- Swing Video Upload
-            |
-            |-- Video Frame Extraction
-            |-- Pose Estimation
-            |-- Landmark Tracking
-            |-- Swing Metric Calculation
-            |-- Club-Specific Feedback Logic
-            |-- Dashboard Visualization
-```
-
----
-
-## Data Collection Plan
-
-- Club images: 50 to 150 images per category (driver/wood, hybrid, iron/wedge). Use personal photos or open-license datasets.
-- Swing videos: 30 to 60 videos of varied skill levels, ideally from two camera angles (down-the-line and face-on).
-- Annotation: Simple labels for club category and swing angle; optional manual tags for phase boundaries to evaluate tempo.
-- Storage: Keep raw data out of GitHub. Use local folders or cloud storage (Drive, OneDrive, S3) and document paths in config.
-
----
-
-## Model Approach
-
-- Club detection: Start with a lightweight image classifier or YOLOv8 model for broad club categories. A manual override is always available.
-- Pose estimation: Use MediaPipe Pose for fast, reliable landmarks or YOLOv8-pose for higher quality if GPU is available.
-- Metrics: Compute geometric proxies (angles and distances) from landmarks, then normalize by torso or shoulder width.
-- Feedback: Rule-based scoring logic keyed by club category to keep results interpretable and realistic for the MVP.
-
----
-
-## Dashboard Workflow
-
-1. Upload club image or select club category manually.
-2. Confirm the detected category with a dropdown.
-3. Upload swing video.
-4. Run analysis and display:
-   - Detected club type and confidence
-   - Annotated key frames or video
-   - Metrics scorecard
-   - Club-specific recommendations
-
----
-
-## Installation
-
-```bash
-python -m venv .venv
-.\.venv\Scripts\activate
-pip install -r requirements.txt
-```
-
-Copy the sample config:
-
-```bash
-copy config.example.yaml config.yaml
-```
-
----
-
-## Usage
-
-```bash
-streamlit run src/app.py
-```
-
----
-
-## Project Structure
+## Updated Project Structure
 
 ```text
 SwingSight-AI/
   assets/
   data/
   models/
+  notebooks/
   outputs/
   reports/
-  notebooks/
+  uploads/
   src/
     app.py
     swingsight/
       __init__.py
-      config.py
-      pipeline.py
       club_detection.py
-      pose_estimation.py
-      metrics.py
+      config.py
       feedback.py
-      visualization.py
       io_utils.py
+      metrics.py
+      pipeline.py
+      pose_estimation.py
+      visualization.py
+    webapp/
+      __init__.py
+      inference/
+        __init__.py
+        pipeline_components.py
+      routes/
+        __init__.py
+        dashboard.py
+      services/
+        __init__.py
+        analysis_service.py
+        report_service.py
+      static/
+        css/
+          dashboard.css
+        js/
+          dashboard.js
+      templates/
+        dashboard.html
+      utils/
+        __init__.py
+        storage.py
   tests/
+    test_smoke.py
   config.example.yaml
   requirements.txt
   README.md
-  .gitignore
 ```
 
----
+## Backend Endpoints
 
-## Evaluation Plan
+- `GET /`: Local dashboard page
+- `POST /api/upload-video`: Upload swing video
+- `POST /api/upload-club-image`: Upload optional club image
+- `POST /api/analyze`: Run full swing analysis pipeline
+- `GET /api/results/<analysis_id>`: Return saved analysis result JSON
+- `GET /uploads/<filename>`: Serve uploaded assets for local preview
+- `GET /outputs/<filename>`: Serve processed outputs (annotated video/images)
+- `POST /api/reports/<analysis_id>`: Generate PDF or DOCX report
+- `GET /reports/<filename>`: Download report file
 
-- Club detection: report accuracy on a held-out image set.
-- Pose tracking: visually inspect key frames and compare landmark stability.
-- Metric stability: compute variance across multiple swings of the same golfer.
-- Feedback sanity checks: compare outputs to coaching expectations for driver vs iron.
+## Frontend-Backend Communication
 
----
+The dashboard JavaScript calls backend APIs with `fetch`:
 
-## Risks and Limitations
+1. Upload files via `multipart/form-data`
+2. Receive upload IDs from backend
+3. Submit analysis request as JSON (`video_upload_id`, optional `club_image_upload_id`, optional `club_category`)
+4. Render returned JSON metrics, score, and feedback in the UI
+5. Request PDF/DOCX generation and trigger local file download
 
-- Pose estimation can fail in low light or with occlusions.
-- Camera angle changes can affect metric consistency.
-- Club detection is broad-category only in the MVP.
-- Tempo estimates are approximate without explicit swing phase labels.
+## Installation
 
----
+Create and activate a virtual environment, then install dependencies:
 
-## Future Improvements
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
 
-- Add swing phase detection to improve tempo and sequencing feedback.
-- Expand club classification to exact club number.
-- Add reference swing comparison and historical tracking.
-- Generate a downloadable report.
+Copy the sample config:
 
----
+```bash
+cp config.example.yaml config.yaml
+```
+
+## Run Locally
+
+From project root:
+
+```bash
+python src/app.py
+```
+
+Open the local dashboard in your browser:
+
+```text
+http://127.0.0.1:8000
+```
+
+## Notes on Scope
+
+This refactor keeps the project local-first and out of production scope:
+
+- No authentication
+- No cloud deployment
+- No database persistence layer
+- No multi-user/session management
+
+The new web layer is a local orchestration and visualization shell around your existing modular AI pipeline.
 
 ## License
 

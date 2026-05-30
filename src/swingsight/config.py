@@ -9,6 +9,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "paths": {
         "data_dir": "data",
         "models_dir": "models",
+        "uploads_dir": "uploads",
         "outputs_dir": "outputs",
         "reports_dir": "reports",
     }

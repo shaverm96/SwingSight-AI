@@ -1,4 +1,4 @@
-streamlit>=1.30.0
+flask>=3.0.0
 opencv-python>=4.8.0
 mediapipe>=0.10.0
 ultralytics>=8.0.0
@@ -10,4 +10,6 @@ pyyaml>=6.0.0
 pillow>=10.0.0
 matplotlib>=3.7.0
 tqdm>=4.66.0
+reportlab>=4.2.0
+python-docx>=1.1.0
 pytest>=7.4.0

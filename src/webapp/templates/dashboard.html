@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SwingSight AI Local Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}" />
+  </head>
+  <body>
+    <main class="page-shell">
+      <header class="hero">
+        <p class="eyebrow">Local-First Analysis</p>
+        <h1>SwingSight AI Dashboard</h1>
+        <p>
+          Upload your golf swing video, run AI analysis locally, and review body tracking, scoring,
+          and report outputs.
+        </p>
+      </header>
+
+      <section class="panel upload-panel">
+        <h2>1. Upload Inputs</h2>
+        <div class="grid two-col">
+          <label class="field-group">
+            <span>Swing Video</span>
+            <input id="videoInput" type="file" accept="video/*" />
+          </label>
+          <label class="field-group">
+            <span>Club Image (Optional)</span>
+            <input id="clubImageInput" type="file" accept="image/*" />
+          </label>
+        </div>
+
+        <label class="field-group select-group">
+          <span>Club Category Override (Optional)</span>
+          <select id="clubCategory">
+            <option value="">Auto-detect</option>
+            <option value="driver_wood">Driver / Wood</option>
+            <option value="hybrid">Hybrid</option>
+            <option value="iron_wedge">Iron / Wedge</option>
+          </select>
+        </label>
+
+        <div class="grid two-col preview-row">
+          <article class="preview-card">
+            <h3>Video Preview</h3>
+            <video id="videoPreview" controls></video>
+          </article>
+          <article class="preview-card">
+            <h3>Club Image Preview</h3>
+            <img id="clubPreview" alt="Club image preview" />
+          </article>
+        </div>
+
+        <div class="button-row">
+          <button id="uploadButton" class="button primary">Upload Files</button>
+          <button id="analyzeButton" class="button" disabled>Run Analysis</button>
+        </div>
+
+        <p id="statusText" class="status">Waiting for upload...</p>
+      </section>
+
+      <section class="panel results-panel">
+        <h2>2. Analysis Results</h2>
+        <div class="grid two-col metrics-grid">
+          <article>
+            <h3>Summary</h3>
+            <pre id="summaryOutput" class="output-box">No analysis yet.</pre>
+          </article>
+          <article>
+            <h3>Metrics</h3>
+            <pre id="metricsOutput" class="output-box">No metrics yet.</pre>
+          </article>
+        </div>
+
+        <article>
+          <h3>Feedback</h3>
+          <ul id="feedbackList" class="feedback-list"></ul>
+        </article>
+
+        <div class="button-row">
+          <button id="downloadPdfButton" class="button" disabled>Download PDF Report</button>
+          <button id="downloadDocxButton" class="button" disabled>Download Word Report</button>
+        </div>
+      </section>
+    </main>
+
+    <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+  </body>
+</html>

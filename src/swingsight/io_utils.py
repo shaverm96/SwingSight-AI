@@ -12,13 +12,16 @@ def ensure_dir(path: str | Path) -> Path:
 
 
 def save_uploaded_file(uploaded_file, output_dir: str, prefix: str) -> str:
-    """Save a Streamlit UploadedFile to disk and return the path."""
+    """Save an uploaded file object to disk and return the path."""
     output_path = ensure_dir(output_dir)
     suffix = Path(uploaded_file.name).suffix or ""
     file_path = output_path / f"{prefix}{suffix}"
 
     with file_path.open("wb") as handle:
-        handle.write(uploaded_file.getbuffer())
+        if hasattr(uploaded_file, "getbuffer"):
+            handle.write(uploaded_file.getbuffer())
+        else:
+            handle.write(uploaded_file.read())
 
     return str(file_path)
 

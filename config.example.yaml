@@ -1,6 +1,7 @@
 paths:
   data_dir: data
   models_dir: models
+  uploads_dir: uploads
   outputs_dir: outputs
   reports_dir: reports
 
@@ -36,3 +37,5 @@ feedback:
 app:
   max_video_seconds: 12
   key_frame_stride: 3
+  local_web_host: 127.0.0.1
+  local_web_port: 8000
