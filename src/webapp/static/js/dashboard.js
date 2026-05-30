@@ -2,6 +2,9 @@ const state = {
   videoUploadId: null,
   clubImageUploadId: null,
   analysisId: null,
+  workflowState: "idle",
+  mediaStream: null,
+  recorder: null,
 };
 
 const videoInput = document.getElementById("videoInput");
@@ -72,47 +75,150 @@ uploadButton.addEventListener("click", async () => {
   }
 });
 
+// Guided camera workflow for club recognition, body check, recording, and analysis
+async function initCamera() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: false });
+    state.mediaStream = stream;
+    videoPreview.srcObject = stream;
+    videoPreview.play();
+    state.workflowState = "idle";
+    updateStatus("Camera ready. Click Record Swing to begin.");
+  } catch (err) {
+    console.error("Camera error", err);
+    updateStatus("Unable to access camera. You can still upload a video file.");
+  }
+}
+
+function captureFrameBlob() {
+  const w = videoPreview.videoWidth || 640;
+  const h = videoPreview.videoHeight || 480;
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d");
+  ctx.drawImage(videoPreview, 0, 0, w, h);
+  return new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+}
+
+async function postFrameForClubDetection() {
+  const blob = await captureFrameBlob();
+  const fd = new FormData();
+  fd.append("frame", blob, "frame.png");
+  const resp = await fetch("/api/club-detect", { method: "POST", body: fd });
+  return resp.json();
+}
+
+async function postFrameForBodyCheck() {
+  const blob = await captureFrameBlob();
+  const fd = new FormData();
+  fd.append("frame", blob, "frame.png");
+  const resp = await fetch("/api/body-check", { method: "POST", body: fd });
+  return resp.json();
+}
+
+async function recordSwingAutomated(durationMs = 5000) {
+  if (!state.mediaStream) throw new Error("No media stream available");
+  const options = { mimeType: "video/webm;codecs=vp9" };
+  const recorder = new MediaRecorder(state.mediaStream, options);
+  const chunks = [];
+  recorder.ondataavailable = (e) => chunks.push(e.data);
+  recorder.start();
+  updateStatus("Recording... Swing now.");
+  await new Promise((res) => setTimeout(res, durationMs));
+  recorder.stop();
+  await new Promise((res) => (recorder.onstop = res));
+  const blob = new Blob(chunks, { type: "video/webm" });
+  return blob;
+}
+
 analyzeButton.addEventListener("click", async () => {
-  if (!state.videoUploadId) {
-    updateStatus("Upload a video first.");
+  // Begin guided workflow
+  if (!state.mediaStream) {
+    updateStatus("Camera not initialized. Clicking will try to access the camera.");
+    await initCamera();
     return;
   }
 
   try {
-    updateStatus("Running analysis locally. This may take a minute...");
+    state.workflowState = "club_recognition";
+    updateStatus("Show the butt/end of your club to the camera.");
 
-    const payload = {
-      video_upload_id: state.videoUploadId,
-      club_image_upload_id: state.clubImageUploadId,
-      club_category: clubCategorySelect.value || null,
-    };
-
-    const response = await fetch("/api/analyze", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(payload),
-    });
-
-    if (!response.ok) {
-      throw new Error(`Analysis failed with status ${response.status}`);
+    // Try multiple frames until confident or timeout
+    let clubResult = null;
+    const maxAttempts = 6;
+    for (let i = 0; i < maxAttempts; i++) {
+      const resp = await postFrameForClubDetection();
+      clubResult = resp.result || resp;
+      if (clubResult && clubResult.confidence >= 0.6) break;
+      await new Promise((r) => setTimeout(r, 700));
     }
 
-    const result = await response.json();
-    state.analysisId = result.analysis_id;
+    if (!clubResult || clubResult.confidence < 0.5) {
+      updateStatus("Could not confirm club. Please hold the butt/end of the club closer to the camera.");
+      state.workflowState = "idle";
+      return;
+    }
 
-    renderSummary(result);
-    renderMetrics(result.metrics || {});
-    renderMetricList(result.metrics || {});
-    renderFeedback(result.feedback || []);
+    updateStatus(`Club confirmed as: ${clubResult.category} (conf: ${Number(clubResult.confidence).toFixed(2)})`);
+    state.workflowState = "club_confirmed";
 
+    // Body detection
+    state.workflowState = "body_detection";
+    updateStatus("Checking body visibility. Step back until your full body is visible.");
+    let visible = false;
+    for (let i = 0; i < 8; i++) {
+      const bodyResp = await postFrameForBodyCheck();
+      const check = bodyResp.check || bodyResp;
+      if (check && check.visible) {
+        visible = true;
+        break;
+      }
+      await new Promise((r) => setTimeout(r, 500));
+    }
+
+    if (!visible) {
+      updateStatus("Body not fully visible. Step back until your full body is visible.");
+      state.workflowState = "idle";
+      return;
+    }
+
+    // Start recording automatically for a short capture window
+    state.workflowState = "recording";
+    updateStatus("Recording swing in 1s. Prepare to swing.");
+    await new Promise((r) => setTimeout(r, 1000));
+    const videoBlob = await recordSwingAutomated(5000);
+
+    // Upload recorded swing
+    updateStatus("Uploading recorded swing for analysis...");
+    const fd = new FormData();
+    fd.append("video", videoBlob, "swing.webm");
+    const uploadResp = await fetch("/api/record-swing", { method: "POST", body: fd });
+    const uploadPayload = await uploadResp.json();
+    state.videoUploadId = uploadPayload.upload_id;
+
+    // Trigger analysis
+    state.workflowState = "analyzing";
+    updateStatus("Analyzing swing. This may take a moment...");
+    const analyzeResp = await fetch("/api/analyze-swing", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ video_upload_id: state.videoUploadId, club_category: clubCategorySelect.value || null }),
+    });
+    const analysisResult = await analyzeResp.json();
+    state.analysisId = analysisResult.analysis_id;
+    renderSummary(analysisResult);
+    renderMetrics(analysisResult.metrics || {});
+    renderMetricList(analysisResult.metrics || {});
+    renderFeedback(analysisResult.feedback || []);
+    updateStatus("Analysis complete.");
+    state.workflowState = "results";
     downloadPdfButton.disabled = false;
     downloadDocxButton.disabled = false;
-    updateStatus("Analysis complete.");
-  } catch (error) {
-    console.error(error);
-    updateStatus("Analysis failed. Check backend logs for details.");
+  } catch (err) {
+    console.error(err);
+    updateStatus("Guided capture failed. You can still upload a video for analysis.");
+    state.workflowState = "idle";
   }
 });
 

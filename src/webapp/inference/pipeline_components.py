@@ -30,6 +30,50 @@ def run_club_detection(club_image_path: Optional[str], config: Dict) -> Dict:
     }
 
 
+def detect_club_from_frame(frame_path: str, config: Dict) -> Dict:
+    """Detect club from a single image frame. Returns category, confidence.
+
+    Placeholder: calls run_club_detection which currently returns a dummy result.
+    """
+    return run_club_detection(frame_path, config)
+
+
+def check_body_visibility_from_frame(frame_path: str, config: Dict) -> Dict:
+    """Check whether key body landmarks are visible in a single frame.
+
+    Returns a dict: {visible: bool, missing: [parts], landmarks: {...}}
+
+    NOTE: This is a placeholder. Replace with image-level pose estimator (MediaPipe or
+    YOLOv8-pose image inference) that returns real keypoints.
+    """
+    required = [
+        "left_ankle",
+        "right_ankle",
+        "left_knee",
+        "right_knee",
+        "left_hip",
+        "right_hip",
+        "left_shoulder",
+        "right_shoulder",
+        "nose",
+    ]
+
+    # Heuristic placeholder: if file exists and size > 2000 bytes, assume visible.
+    from pathlib import Path
+
+    p = Path(frame_path)
+    visible = p.exists() and p.stat().st_size > 2000
+    missing = [] if visible else required
+
+    # Fake landmarks structure for UI plumbing
+    landmarks = {}
+    if visible:
+        for name in required:
+            landmarks[name] = {"x": 0.5, "y": 0.5, "z": 0.0, "visibility": 0.9}
+
+    return {"visible": bool(visible), "missing": missing, "landmarks": landmarks}
+
+
 def classify_club_category(club_image_path: Optional[str], detected_category: str, config: Dict) -> Dict:
     """Placeholder CNN classifier for finer club category classification."""
     _ = club_image_path

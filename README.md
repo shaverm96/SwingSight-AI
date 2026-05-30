@@ -123,7 +123,7 @@ cp config.example.yaml config.yaml
 From project root:
 
 ```bash
-python src/app.py
+python app.py
 ```
 
 Open the local dashboard in your browser:
@@ -131,6 +131,27 @@ Open the local dashboard in your browser:
 ```text
 http://127.0.0.1:8000
 ```
+
+Do not open `src/webapp/templates/dashboard.html` directly from the file system.
+The dashboard is a Flask template and must be served by the local backend.
+
+## Camera-based Guided Capture (New)
+
+This release adds a local camera-guided workflow so you can use your webcam to capture club and swing data directly.
+
+How it works:
+
+1. Open the dashboard in your browser (`http://127.0.0.1:8000`). The app will ask for permission to use the camera.
+2. Click the **Record Swing** button to start a guided capture.
+  - The app will first ask you to show the butt/end of your club to the camera for club recognition.
+  - If the club is confirmed, the app will check that your full body is visible.
+  - If your body is visible, the app will automatically record a short clip of your swing and send it to the backend for analysis.
+3. When analysis finishes, results are shown in the dashboard and you can download a PDF or Word report.
+
+Notes:
+- The current club/body detectors are placeholders. Replace with YOLOv8/CNN/OCR and YOLOv8-pose for production accuracy.
+- The guided capture records a short clip automatically (approx 5s); this can be adjusted in `src/webapp/static/js/dashboard.js`.
+- The entire workflow is local-first. No credentials, cloud storage, or external services are used by default.
 
 ## Notes on Scope
 

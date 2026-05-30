@@ -6,6 +6,10 @@ from flask import Blueprint, Response, current_app, jsonify, render_template, re
 
 from webapp.services.analysis_service import AnalysisContext, AnalysisService
 from webapp.utils.storage import save_filestorage
+from webapp.inference.pipeline_components import (
+    detect_club_from_frame,
+    check_body_visibility_from_frame,
+)
 
 
 dashboard_bp = Blueprint("dashboard", __name__)
@@ -62,6 +66,64 @@ def upload_club_image() -> Response:
             "preview_url": f"/uploads/{Path(file_path).name}",
         }
     )
+
+
+
+@dashboard_bp.post("/api/club-detect")
+def club_detect() -> Response:
+    """Receive a single camera frame and run club detection/classification."""
+    frame = request.files.get("frame")
+    if frame is None:
+        return jsonify({"error": "frame is required"}), 400
+
+    service = _service()
+    file_id, file_path = save_filestorage(frame, service.uploads_dir, "frame")
+    result = detect_club_from_frame(file_path, current_app.config["SWINGSIGHT_CONFIG"])
+    return jsonify({"upload_id": file_id, "file_name": Path(file_path).name, "result": result})
+
+
+@dashboard_bp.post("/api/body-check")
+def body_check() -> Response:
+    """Receive a single camera frame and check whether the key body landmarks are visible."""
+    frame = request.files.get("frame")
+    if frame is None:
+        return jsonify({"error": "frame is required"}), 400
+
+    service = _service()
+    file_id, file_path = save_filestorage(frame, service.uploads_dir, "frame")
+    check = check_body_visibility_from_frame(file_path, current_app.config["SWINGSIGHT_CONFIG"])
+    return jsonify({"upload_id": file_id, "file_name": Path(file_path).name, "check": check})
+
+
+@dashboard_bp.post("/api/record-swing")
+def record_swing() -> Response:
+    """Accept a recorded swing video blob and save it for analysis."""
+    file_obj = request.files.get("video")
+    if file_obj is None:
+        return jsonify({"error": "video file is required"}), 400
+
+    service = _service()
+    file_id, file_path = save_filestorage(file_obj, service.uploads_dir, "recorded")
+    return jsonify({"upload_id": file_id, "file_name": Path(file_path).name, "preview_url": f"/uploads/{Path(file_path).name}"})
+
+
+@dashboard_bp.post("/api/analyze-swing")
+def analyze_swing_api() -> Response:
+    payload = request.get_json(silent=True) or {}
+    video_upload_id = payload.get("video_upload_id")
+    club_category = payload.get("club_category")
+
+    if not video_upload_id:
+        return jsonify({"error": "video_upload_id is required"}), 400
+
+    video_path = uploaded_files.get(video_upload_id)
+    if not video_path:
+        return jsonify({"error": "video upload not found"}), 404
+
+    result = _service().run_analysis(
+        AnalysisContext(video_path=video_path, club_image_path=None, manual_club_category=club_category)
+    )
+    return jsonify(result)
 
 
 @dashboard_bp.post("/api/analyze")
