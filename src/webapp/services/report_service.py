@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Dict
+from typing import Dict, Iterable, Tuple
 
 import pandas as pd
 from docx import Document
@@ -13,6 +13,17 @@ def _ensure_reports_dir(reports_dir: str) -> Path:
     output = Path(reports_dir)
     output.mkdir(parents=True, exist_ok=True)
     return output
+
+
+def _iter_feedback_sections(feedback: object) -> Iterable[Tuple[str, list[str]]]:
+    if isinstance(feedback, dict):
+        for key, items in feedback.items():
+            title = key.replace("_", " ").title()
+            yield title, list(items or [])
+        return
+    if isinstance(feedback, list):
+        yield "Feedback", [str(item) for item in feedback]
+
 
 
 def generate_pdf_report(result: Dict, reports_dir: str) -> str:
@@ -53,12 +64,20 @@ def generate_pdf_report(result: Dict, reports_dir: str) -> str:
     pdf.drawString(50, y, "Feedback")
     y -= 15
     pdf.setFont("Helvetica", 10)
-    for item in result.get("feedback", []):
-        pdf.drawString(50, y, f"- {item}")
-        y -= 14
-        if y < 70:
-            pdf.showPage()
-            y = height - 50
+    for title, items in _iter_feedback_sections(result.get("feedback")):
+        pdf.setFont("Helvetica-Bold", 11)
+        pdf.drawString(50, y, title)
+        y -= 15
+        pdf.setFont("Helvetica", 10)
+        if not items:
+            pdf.drawString(50, y, "- No feedback available")
+            y -= 14
+        for item in items:
+            pdf.drawString(50, y, f"- {item}")
+            y -= 14
+            if y < 70:
+                pdf.showPage()
+                y = height - 50
 
     pdf.save()
     return str(report_path)
@@ -81,8 +100,13 @@ def generate_word_report(result: Dict, reports_dir: str) -> str:
         document.add_paragraph(f"{column}: {value}")
 
     document.add_heading("Feedback", level=2)
-    for item in result.get("feedback", []):
-        document.add_paragraph(item, style="List Bullet")
+    for title, items in _iter_feedback_sections(result.get("feedback")):
+        document.add_heading(title, level=3)
+        if not items:
+            document.add_paragraph("No feedback available.")
+            continue
+        for item in items:
+            document.add_paragraph(item, style="List Bullet")
 
     document.save(str(report_path))
     return str(report_path)

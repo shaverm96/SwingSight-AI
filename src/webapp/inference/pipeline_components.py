@@ -8,7 +8,7 @@ import pandas as pd
 
 from swingsight.club_detection import CLUB_CATEGORIES, detect_club_category
 from swingsight.club_recognition import predicted_to_category, recognize_club_from_frame
-from swingsight.feedback import generate_club_feedback
+from swingsight.feedback import generate_feedback_sections
 from swingsight.metrics import compute_swing_metrics
 from swingsight.pose_estimation import run_pose_estimation
 from swingsight.visualization import render_annotated_video
@@ -159,9 +159,9 @@ def score_swing(metrics: Dict[str, float], club_category: str, config: Dict) -> 
     }
 
 
-def build_feedback(metrics: Dict[str, float], club_category: str, config: Dict) -> List[str]:
-    """Create human-readable coaching feedback from metric outputs."""
-    return generate_club_feedback(metrics, club_category, config)
+def build_feedback(metrics: Dict[str, float], club_category: str, config: Dict) -> Dict[str, List[str]]:
+    """Create structured coaching feedback from metric outputs."""
+    return generate_feedback_sections(metrics, club_category, config)
 
 
 def render_outputs(video_path: str, pose_frames: List[Dict], outputs_dir: str) -> Dict:

@@ -1,257 +1,258 @@
 const state = {
   videoUploadId: null,
-  clubImageUploadId: null,
   analysisId: null,
-  workflowState: "idle",
   mediaStream: null,
-  recorder: null,
+  lastPreviewUrl: null,
+  recording: false,
 };
 
-const videoInput = document.getElementById("videoInput");
-const clubImageInput = document.getElementById("clubImageInput");
-const clubCategorySelect = document.getElementById("clubCategory");
+const uploadInput = document.getElementById("uploadInput");
+const uploadTrigger = document.getElementById("uploadTrigger");
+const recordTrigger = document.getElementById("recordTrigger");
+const startGuideButton = document.getElementById("startGuideButton");
+const cancelRecordButton = document.getElementById("cancelRecordButton");
 
-const videoPreview = document.getElementById("videoPreview");
-const clubPreview = document.getElementById("clubPreview");
+const recordPanel = document.getElementById("recordPanel");
+const resultsPanel = document.getElementById("resultsPanel");
+const livePreview = document.getElementById("livePreview");
+const analysisPreview = document.getElementById("analysisPreview");
+const recordStep = document.getElementById("recordStep");
 const statusText = document.getElementById("statusText");
-const summaryOutput = document.getElementById("summaryOutput");
-const metricsOutput = document.getElementById("metricsOutput");
-const feedbackList = document.getElementById("feedbackList");
-const metricList = document.getElementById("metricList");
-const overallScoreValue = document.getElementById("overallScoreValue");
-const overallGrade = document.getElementById("overallGrade");
-const finalClubValue = document.getElementById("finalClubValue");
-const frameCountValue = document.getElementById("frameCountValue");
 const analysisIdValue = document.getElementById("analysisIdValue");
-
-const uploadButton = document.getElementById("uploadButton");
-const analyzeButton = document.getElementById("analyzeButton");
+const detectedClubValue = document.getElementById("detectedClubValue");
+const detectedClubDetail = document.getElementById("detectedClubDetail");
+const swingScoreValue = document.getElementById("swingScoreValue");
+const swingScoreDetail = document.getElementById("swingScoreDetail");
+const swingGradeValue = document.getElementById("swingGradeValue");
+const takeawayList = document.getElementById("takeawayList");
+const focusText = document.getElementById("focusText");
+const overlayLink = document.getElementById("overlayLink");
 const downloadPdfButton = document.getElementById("downloadPdfButton");
 const downloadDocxButton = document.getElementById("downloadDocxButton");
-const watchReplayButton = document.getElementById("watchReplayButton");
-const generateReportButton = document.getElementById("generateReportButton");
-const recordAnotherButton = document.getElementById("recordAnotherButton");
+const advancedMetrics = document.getElementById("advancedMetrics");
+const advancedTracking = document.getElementById("advancedTracking");
+const advancedModels = document.getElementById("advancedModels");
 
-videoInput.addEventListener("change", () => {
-  const file = videoInput.files[0];
+uploadTrigger.addEventListener("click", () => uploadInput.click());
+
+uploadInput.addEventListener("change", async () => {
+  const file = uploadInput.files[0];
   if (!file) {
     return;
   }
-  videoPreview.src = URL.createObjectURL(file);
-  updateStatus("Video selected. Click upload to continue.");
+  analysisPreview.src = URL.createObjectURL(file);
+  await handleUploadFlow(file);
 });
 
-clubImageInput.addEventListener("change", () => {
-  const file = clubImageInput.files[0];
-  if (!file) {
-    return;
-  }
-  clubPreview.src = URL.createObjectURL(file);
-  updateStatus("Club image selected. Click upload to continue.");
+recordTrigger.addEventListener("click", async () => {
+  recordPanel.classList.remove("hidden");
+  await initCamera();
 });
 
-uploadButton.addEventListener("click", async () => {
-  const videoFile = videoInput.files[0];
-  const imageFile = clubImageInput.files[0];
-
-  if (!videoFile) {
-    updateStatus("Please select a swing video before uploading.");
+startGuideButton.addEventListener("click", async () => {
+  if (state.recording) {
     return;
   }
-
   try {
-    updateStatus("Uploading files...");
+    state.recording = true;
+    await runGuidedCapture();
+  } finally {
+    state.recording = false;
+  }
+});
 
-    state.videoUploadId = await uploadFile("/api/upload-video", "video", videoFile);
+cancelRecordButton.addEventListener("click", () => {
+  stopCamera();
+  recordPanel.classList.add("hidden");
+  updateStatus("Recording canceled. Choose another option.");
+  updateStep("Ready");
+});
 
-    if (imageFile) {
-      state.clubImageUploadId = await uploadFile("/api/upload-club-image", "image", imageFile);
-    } else {
-      state.clubImageUploadId = null;
-    }
+downloadPdfButton.addEventListener("click", () => requestReport("pdf"));
+downloadDocxButton.addEventListener("click", () => requestReport("docx"));
 
-    analyzeButton.disabled = false;
-    updateStatus("Upload complete. You can now run analysis.");
+async function handleUploadFlow(file) {
+  try {
+    updateStatus("Uploading your swing...");
+    state.videoUploadId = await uploadFile("/api/upload-video", "video", file);
+    await runAnalysis("/api/analyze", { video_upload_id: state.videoUploadId });
   } catch (error) {
     console.error(error);
-    updateStatus("Upload failed. Check the selected files and try again.");
-  }
-});
-
-// Guided camera workflow for club recognition, body check, recording, and analysis
-async function initCamera() {
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: false });
-    state.mediaStream = stream;
-    videoPreview.srcObject = stream;
-    videoPreview.play();
-    state.workflowState = "idle";
-    updateStatus("Camera ready. Click Record Swing to begin.");
-  } catch (err) {
-    console.error("Camera error", err);
-    updateStatus("Unable to access camera. You can still upload a video file.");
+    updateStatus("Upload failed. Please try again.");
   }
 }
 
-function captureFrameBlob() {
-  const w = videoPreview.videoWidth || 640;
-  const h = videoPreview.videoHeight || 480;
+async function initCamera() {
+  try {
+    if (state.mediaStream) {
+      return;
+    }
+    const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+    state.mediaStream = stream;
+    livePreview.srcObject = stream;
+    await livePreview.play();
+    updateStatus("Camera ready. Tap Start to begin.");
+  } catch (err) {
+    console.error("Camera error", err);
+    updateStatus("Unable to access camera. You can still upload a video.");
+  }
+}
+
+function stopCamera() {
+  if (!state.mediaStream) {
+    return;
+  }
+  state.mediaStream.getTracks().forEach((track) => track.stop());
+  state.mediaStream = null;
+  livePreview.srcObject = null;
+}
+
+async function runGuidedCapture() {
+  if (!state.mediaStream) {
+    await initCamera();
+    if (!state.mediaStream) {
+      return;
+    }
+  }
+
+  updateStep("Show club end");
+  updateStatus("Show the end of your club.");
+  const clubResult = await attemptClubRecognition();
+  if (!clubResult) {
+    updateStatus("Could not confirm club. Try again or upload a video.");
+    updateStep("Ready");
+    return;
+  }
+
+  const clubLabel = clubResult.predicted_club || clubResult.category || "Unknown";
+  updateStatus(`Club confirmed: ${clubLabel}.`);
+
+  updateStep("Step back");
+  updateStatus("Step back so your full body is visible.");
+  const bodyVisible = await attemptBodyCheck();
+  if (!bodyVisible) {
+    updateStatus("Step back so your full body is visible.");
+    updateStep("Ready");
+    return;
+  }
+
+  updateStep("Ready");
+  updateStatus("Ready. Swing away.");
+  await new Promise((r) => setTimeout(r, 1000));
+  const videoBlob = await recordSwing(5500);
+
+  updateStep("Uploading");
+  updateStatus("Uploading your swing...");
+  const uploadPayload = await uploadRecordedSwing(videoBlob);
+  state.videoUploadId = uploadPayload.upload_id;
+  state.lastPreviewUrl = uploadPayload.preview_url || `/uploads/${uploadPayload.file_name}`;
+  analysisPreview.srcObject = null;
+  analysisPreview.src = state.lastPreviewUrl;
+
+  updateStep("Analyzing");
+  await runAnalysis("/api/analyze-swing", { video_upload_id: state.videoUploadId });
+  updateStep("Done");
+}
+
+async function attemptClubRecognition() {
+  const maxAttempts = 6;
+  for (let i = 0; i < maxAttempts; i++) {
+    const resp = await postFrame("/api/club-detect");
+    const result = resp.result || resp;
+    const status = result?.status || (result?.confidence >= 0.6 ? "confirmed" : "uncertain");
+    if (status === "confirmed") {
+      return result;
+    }
+    await wait(600);
+  }
+  return null;
+}
+
+async function attemptBodyCheck() {
+  const maxAttempts = 8;
+  for (let i = 0; i < maxAttempts; i++) {
+    const resp = await postFrame("/api/body-check");
+    const check = resp.check || resp;
+    if (check?.visible) {
+      return true;
+    }
+    await wait(500);
+  }
+  return false;
+}
+
+async function postFrame(endpoint) {
+  const blob = await captureFrameBlob();
+  const fd = new FormData();
+  fd.append("frame", blob, "frame.png");
+  const resp = await fetch(endpoint, { method: "POST", body: fd });
+  return resp.json();
+}
+
+async function captureFrameBlob() {
+  const w = livePreview.videoWidth || 640;
+  const h = livePreview.videoHeight || 480;
   const canvas = document.createElement("canvas");
   canvas.width = w;
   canvas.height = h;
   const ctx = canvas.getContext("2d");
-  ctx.drawImage(videoPreview, 0, 0, w, h);
+  ctx.drawImage(livePreview, 0, 0, w, h);
   return new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
 }
 
-async function postFrameForClubDetection() {
-  const blob = await captureFrameBlob();
-  const fd = new FormData();
-  fd.append("frame", blob, "frame.png");
-  const resp = await fetch("/api/club-detect", { method: "POST", body: fd });
-  return resp.json();
-}
-
-async function postFrameForBodyCheck() {
-  const blob = await captureFrameBlob();
-  const fd = new FormData();
-  fd.append("frame", blob, "frame.png");
-  const resp = await fetch("/api/body-check", { method: "POST", body: fd });
-  return resp.json();
-}
-
-async function recordSwingAutomated(durationMs = 5000) {
-  if (!state.mediaStream) throw new Error("No media stream available");
-  const options = { mimeType: "video/webm;codecs=vp9" };
-  const recorder = new MediaRecorder(state.mediaStream, options);
-  const chunks = [];
-  recorder.ondataavailable = (e) => chunks.push(e.data);
-  recorder.start();
-  updateStatus("Recording... Swing now.");
-  await new Promise((res) => setTimeout(res, durationMs));
-  recorder.stop();
-  await new Promise((res) => (recorder.onstop = res));
-  const blob = new Blob(chunks, { type: "video/webm" });
-  return blob;
-}
-
-analyzeButton.addEventListener("click", async () => {
-  // Begin guided workflow
+async function recordSwing(durationMs) {
   if (!state.mediaStream) {
-    updateStatus("Camera not initialized. Clicking will try to access the camera.");
-    await initCamera();
-    return;
+    throw new Error("No media stream available");
   }
+  const mimeType = MediaRecorder.isTypeSupported("video/webm;codecs=vp9")
+    ? "video/webm;codecs=vp9"
+    : "video/webm";
+  const recorder = new MediaRecorder(state.mediaStream, { mimeType });
+  const chunks = [];
+  recorder.ondataavailable = (event) => chunks.push(event.data);
+  recorder.start();
+  await wait(durationMs);
+  recorder.stop();
+  await new Promise((resolve) => (recorder.onstop = resolve));
+  return new Blob(chunks, { type: mimeType });
+}
 
-  try {
-    state.workflowState = "club_recognition";
-    updateStatus("Show the butt/end of your club to the camera.");
-
-    // Try multiple frames until confident or timeout
-    let clubResult = null;
-    const maxAttempts = 6;
-    for (let i = 0; i < maxAttempts; i++) {
-      const resp = await postFrameForClubDetection();
-      clubResult = resp.result || resp;
-      const status = clubResult?.status || (clubResult?.confidence >= 0.6 ? "confirmed" : "uncertain");
-      if (status === "confirmed") break;
-      await new Promise((r) => setTimeout(r, 700));
-    }
-
-    if (!clubResult || clubResult.status !== "confirmed") {
-      const hint = clubResult?.reasoning ? ` (${clubResult.reasoning})` : "";
-      updateStatus(`Could not confirm club. Please hold the club end closer to the camera.${hint}`);
-      state.workflowState = "idle";
-      return;
-    }
-
-    const clubLabel = clubResult.predicted_club || clubResult.category || "Unknown";
-    updateStatus(`Club confirmed as: ${clubLabel} (conf: ${Number(clubResult.confidence).toFixed(2)})`);
-    state.workflowState = "club_confirmed";
-
-    // Body detection
-    state.workflowState = "body_detection";
-    updateStatus("Checking body visibility. Step back until your full body is visible.");
-    let visible = false;
-    for (let i = 0; i < 8; i++) {
-      const bodyResp = await postFrameForBodyCheck();
-      const check = bodyResp.check || bodyResp;
-      if (check && check.visible) {
-        visible = true;
-        break;
-      }
-      await new Promise((r) => setTimeout(r, 500));
-    }
-
-    if (!visible) {
-      updateStatus("Body not fully visible. Step back until your full body is visible.");
-      state.workflowState = "idle";
-      return;
-    }
-
-    // Start recording automatically for a short capture window
-    state.workflowState = "recording";
-    updateStatus("Recording swing in 1s. Prepare to swing.");
-    await new Promise((r) => setTimeout(r, 1000));
-    const videoBlob = await recordSwingAutomated(5000);
-
-    // Upload recorded swing
-    updateStatus("Uploading recorded swing for analysis...");
-    const fd = new FormData();
-    fd.append("video", videoBlob, "swing.webm");
-    const uploadResp = await fetch("/api/record-swing", { method: "POST", body: fd });
-    const uploadPayload = await uploadResp.json();
-      state.videoUploadId = uploadPayload.upload_id;
-      state.lastPreviewUrl = uploadPayload.preview_url || `/uploads/${uploadPayload.file_name}`;
-
-    // Trigger analysis
-    state.workflowState = "analyzing";
-    updateStatus("Analyzing swing. This may take a moment...");
-    const analyzeResp = await fetch("/api/analyze-swing", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ video_upload_id: state.videoUploadId, club_category: clubCategorySelect.value || null }),
-    });
-    const analysisResult = await analyzeResp.json();
-    state.analysisId = analysisResult.analysis_id;
-    renderSummary(analysisResult);
-    renderMetrics(analysisResult.metrics || {});
-    renderMetricList(analysisResult.metrics || {});
-    renderFeedback(analysisResult.feedback || []);
-    updateStatus("Analysis complete.");
-    state.workflowState = "results";
-    downloadPdfButton.disabled = false;
-    downloadDocxButton.disabled = false;
-    if (watchReplayButton) watchReplayButton.disabled = false;
-    if (generateReportButton) generateReportButton.disabled = false;
-  } catch (err) {
-    console.error(err);
-    updateStatus("Guided capture failed. You can still upload a video for analysis.");
-    state.workflowState = "idle";
+async function uploadRecordedSwing(blob) {
+  const fd = new FormData();
+  fd.append("video", blob, "swing.webm");
+  const resp = await fetch("/api/record-swing", { method: "POST", body: fd });
+  if (!resp.ok) {
+    throw new Error("Recording upload failed");
   }
-});
+  return resp.json();
+}
 
-downloadPdfButton.addEventListener("click", () => {
-  requestReport("pdf");
-});
-
-downloadDocxButton.addEventListener("click", () => {
-  requestReport("docx");
-});
+async function runAnalysis(endpoint, payload) {
+  updateStatus("Analyzing your swing...");
+  const resp = await fetch(endpoint, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!resp.ok) {
+    throw new Error("Analysis request failed");
+  }
+  const result = await resp.json();
+  state.analysisId = result.analysis_id;
+  renderResults(result);
+  updateStatus("Analysis complete.");
+  resultsPanel.classList.remove("hidden");
+  downloadPdfButton.disabled = false;
+  downloadDocxButton.disabled = false;
+}
 
 async function uploadFile(endpoint, fieldName, file) {
   const formData = new FormData();
   formData.append(fieldName, file);
-
-  const response = await fetch(endpoint, {
-    method: "POST",
-    body: formData,
-  });
-
+  const response = await fetch(endpoint, { method: "POST", body: formData });
   if (!response.ok) {
     throw new Error(`Upload failed: ${response.status}`);
   }
-
   const payload = await response.json();
   return payload.upload_id;
 }
@@ -261,22 +262,16 @@ async function requestReport(format) {
     updateStatus("Run an analysis before downloading a report.");
     return;
   }
-
   try {
     updateStatus(`Generating ${format.toUpperCase()} report...`);
-
     const response = await fetch(`/api/reports/${state.analysisId}`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ format }),
     });
-
     if (!response.ok) {
       throw new Error(`Report generation failed: ${response.status}`);
     }
-
     const payload = await response.json();
     window.location.href = payload.download_url;
     updateStatus(`${format.toUpperCase()} report generated and download started.`);
@@ -286,75 +281,61 @@ async function requestReport(format) {
   }
 }
 
-function renderSummary(result) {
-  const summary = {
-    analysis_id: result.analysis_id,
-    final_club_category: result.final_club_category,
-    pose_frame_count: result.pose_frame_count,
-    score: result.score,
-    body_tracking: result.body_tracking,
+function renderResults(result) {
+  const summary = result?.summary || {};
+  const detectedClub = summary.confirmed_club || result?.detected_club || "Unknown";
+  const score = summary.overall_score ?? result?.score?.overall_score;
+  const overlayPath = result?.outputs?.annotated_video_path;
+
+  analysisIdValue.textContent = result.analysis_id || "--";
+  detectedClubValue.textContent = detectedClub;
+  detectedClubDetail.textContent = detectedClub;
+  swingScoreValue.textContent = Number.isFinite(score) ? `${Math.round(score)}` : "--";
+  swingScoreDetail.textContent = Number.isFinite(score) ? `${Math.round(score)}` : "--";
+  swingGradeValue.textContent = scoreToGrade(score);
+
+  if (overlayPath) {
+    const fileName = overlayPath.split("/").slice(-1)[0];
+    overlayLink.href = `/outputs/${fileName}`;
+    overlayLink.classList.remove("hidden");
+  } else {
+    overlayLink.href = "#";
+    overlayLink.classList.add("hidden");
+  }
+
+  const takeaways = summary.takeaways || [];
+  renderFeedbackSection(takeawayList, takeaways);
+  focusText.textContent = summary.focus || "Keep your tempo smooth and finish balanced.";
+
+  const advanced = result?.advanced || {
+    metrics: result?.metrics,
+    body_tracking: result?.body_tracking,
+    model_outputs: {
+      club_detection: result?.club_detection,
+      club_classification: result?.club_classification,
+      loft_recognition: result?.loft_recognition,
+      score: result?.score,
+    },
   };
-  summaryOutput.textContent = JSON.stringify(summary, null, 2);
 
-  if (analysisIdValue) {
-    analysisIdValue.textContent = result.analysis_id || "-";
-  }
-  if (finalClubValue) {
-    finalClubValue.textContent = result.final_club_category || "-";
-  }
-  if (frameCountValue) {
-    frameCountValue.textContent = `${result.pose_frame_count || 0}`;
-  }
-
-  const score = result?.score?.overall_score;
-  if (overallScoreValue) {
-    overallScoreValue.textContent = Number.isFinite(score) ? `${Math.round(score)}` : "--";
-  }
-  if (overallGrade) {
-    overallGrade.textContent = scoreToGrade(score);
-  }
+  advancedMetrics.textContent = JSON.stringify(advanced.metrics || {}, null, 2);
+  advancedTracking.textContent = JSON.stringify(advanced.body_tracking || {}, null, 2);
+  advancedModels.textContent = JSON.stringify(advanced.model_outputs || {}, null, 2);
 }
 
-function renderMetrics(metrics) {
-  metricsOutput.textContent = JSON.stringify(metrics, null, 2);
-}
-
-function renderMetricList(metrics) {
-  if (!metricList) {
+function renderFeedbackSection(listEl, items) {
+  listEl.innerHTML = "";
+  const safeItems = Array.isArray(items) ? items : [];
+  if (!safeItems.length) {
+    const li = document.createElement("li");
+    li.textContent = "No feedback available yet.";
+    listEl.appendChild(li);
     return;
   }
-
-  metricList.innerHTML = "";
-  const entries = Object.entries(metrics);
-  if (!entries.length) {
-    const li = document.createElement("li");
-    li.textContent = "No metrics available yet.";
-    metricList.appendChild(li);
-    return;
-  }
-
-  for (const [name, value] of entries) {
-    const li = document.createElement("li");
-    const normalized = Number(value);
-    const displayValue = Number.isFinite(normalized) ? normalized.toFixed(2) : value;
-    li.textContent = `${toTitleCase(name)}: ${displayValue}`;
-    metricList.appendChild(li);
-  }
-}
-
-function renderFeedback(items) {
-  feedbackList.innerHTML = "";
-  if (!items.length) {
-    const li = document.createElement("li");
-    li.textContent = "No feedback items generated yet.";
-    feedbackList.appendChild(li);
-    return;
-  }
-
-  for (const item of items) {
+  for (const item of safeItems) {
     const li = document.createElement("li");
     li.textContent = item;
-    feedbackList.appendChild(li);
+    listEl.appendChild(li);
   }
 }
 
@@ -362,9 +343,13 @@ function updateStatus(message) {
   statusText.textContent = message;
 }
 
+function updateStep(step) {
+  recordStep.textContent = `Step: ${step}`;
+}
+
 function scoreToGrade(score) {
   if (!Number.isFinite(score)) {
-    return "Awaiting Analysis";
+    return "Awaiting analysis";
   }
   if (score >= 90) {
     return "Excellent";
@@ -375,65 +360,9 @@ function scoreToGrade(score) {
   if (score >= 70) {
     return "Improving";
   }
-  return "Needs Work";
+  return "Needs work";
 }
 
-function toTitleCase(text) {
-  return text
-    .replaceAll("_", " ")
-    .split(" ")
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
-}
-
-// Watch replay handler: load last recorded preview URL into player
-if (watchReplayButton) {
-  watchReplayButton.addEventListener("click", () => {
-    if (!state.lastPreviewUrl) {
-      updateStatus("No recorded swing available. Record one first.");
-      return;
-    }
-    videoPreview.srcObject = null;
-    videoPreview.src = state.lastPreviewUrl;
-    videoPreview.play();
-    updateStatus("Playing recorded swing.");
-  });
-}
-
-// Generate report shortcut — opens the report generation endpoint
-if (generateReportButton) {
-  generateReportButton.addEventListener("click", async () => {
-    if (!state.analysisId) {
-      updateStatus("Run an analysis before generating a report.");
-      return;
-    }
-    updateStatus("Generating PDF report...");
-    const resp = await fetch(`/api/reports/${state.analysisId}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ format: "pdf" }),
-    });
-    const payload = await resp.json();
-    if (payload.download_url) {
-      window.location.href = payload.download_url;
-    } else {
-      updateStatus("Report generation failed.");
-    }
-  });
-}
-
-// Record another swing: reset state and re-initialize camera
-if (recordAnotherButton) {
-  recordAnotherButton.addEventListener("click", async () => {
-    state.workflowState = "idle";
-    state.analysisId = null;
-    state.videoUploadId = null;
-    state.lastPreviewUrl = null;
-    downloadPdfButton.disabled = true;
-    downloadDocxButton.disabled = true;
-    if (watchReplayButton) watchReplayButton.disabled = true;
-    if (generateReportButton) generateReportButton.disabled = true;
-    updateStatus("Ready to record another swing. Click Record Swing.");
-    await initCamera();
-  });
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

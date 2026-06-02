@@ -87,11 +87,38 @@ SwingSight-AI/
 - `POST /api/upload-video`: Upload swing video
 - `POST /api/upload-club-image`: Upload optional club image
 - `POST /api/analyze`: Run full swing analysis pipeline
+- `POST /api/club-detect`: Detect and classify club from a camera frame
+- `POST /api/body-check`: Check body visibility from a camera frame
+- `POST /api/record-swing`: Upload recorded swing video
+- `POST /api/analyze-swing`: Analyze a recorded swing video
 - `GET /api/results/<analysis_id>`: Return saved analysis result JSON
 - `GET /uploads/<filename>`: Serve uploaded assets for local preview
 - `GET /outputs/<filename>`: Serve processed outputs (annotated video/images)
 - `POST /api/reports/<analysis_id>`: Generate PDF or DOCX report
 - `GET /reports/<filename>`: Download report file
+
+## Beginner-Friendly Local Workflow
+
+The landing page gives two clear choices:
+
+1. **Upload a Swing Video**
+  - Pick a video file from your computer
+  - The app uploads the video to the backend
+  - The backend runs the full SwingSight AI analysis
+  - Results show a simple swing summary with coach-style takeaways
+
+2. **Record a Swing**
+  - The app requests camera access
+  - The app guides you through club recognition, body visibility, and swing recording
+  - Short prompts keep things simple:
+    - “Show the end of your club.”
+    - “Club confirmed: 7 Iron.”
+    - “Step back so your full body is visible.”
+    - “Ready. Swing away.”
+    - “Analyzing your swing...”
+  - The backend analyzes the recorded swing and shows the same results
+
+The main results view is intentionally simple (score, confirmed club, biggest takeaways, and one focus item). An **Advanced Details** section is available if you want to explore deeper metrics and model outputs.
 
 ## Frontend-Backend Communication
 
@@ -99,9 +126,16 @@ The dashboard JavaScript calls backend APIs with `fetch`:
 
 1. Upload files via `multipart/form-data`
 2. Receive upload IDs from backend
-3. Submit analysis request as JSON (`video_upload_id`, optional `club_image_upload_id`, optional `club_category`)
+3. Submit analysis request as JSON (`video_upload_id`)
 4. Render returned JSON metrics, score, and feedback in the UI
 5. Request PDF/DOCX generation and trigger local file download
+
+## Backend Response Format (Simple + Advanced)
+
+The backend returns a summary payload for the main UI and a separate `advanced` payload for deeper inspection:
+
+- `summary`: overall score, confirmed club, top takeaways, and focus tip
+- `advanced`: metrics, pose frame count, body tracking data, model outputs, and rendered assets
 
 ## Club Recognition Decision Tree
 
@@ -188,18 +222,19 @@ http://127.0.0.1:8000
 Do not open `src/webapp/templates/dashboard.html` directly from the file system.
 The dashboard is a Flask template and must be served by the local backend.
 
-## Camera-based Guided Capture (New)
+## Camera-based Guided Capture
 
 This release adds a local camera-guided workflow so you can use your webcam to capture club and swing data directly.
 
 How it works:
 
 1. Open the dashboard in your browser (`http://127.0.0.1:8000`). The app will ask for permission to use the camera.
-2. Click the **Record Swing** button to start a guided capture.
-  - The app will first ask you to show the butt/end of your club to the camera for club recognition.
-  - If the club is confirmed, the app will check that your full body is visible.
-  - If your body is visible, the app will automatically record a short clip of your swing and send it to the backend for analysis.
-3. When analysis finishes, results are shown in the dashboard and you can download a PDF or Word report.
+2. Click **Record Swing** to start the guided capture.
+  - Show the butt/end of your club to the camera for club recognition.
+  - Once confirmed, the UI displays: “Club confirmed as: [club]. Swing away.”
+  - Step back for the body visibility check.
+  - The app records a short swing clip and sends it to the backend for analysis.
+3. When analysis finishes, results are shown in the dashboard with report download options.
 
 Notes:
 - The current club/body detectors are placeholders. Replace with YOLOv8/CNN/OCR and YOLOv8-pose for production accuracy.

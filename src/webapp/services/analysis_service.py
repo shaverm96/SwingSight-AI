@@ -60,12 +60,32 @@ class AnalysisService:
         feedback = build_feedback(metrics, final_club_category, self.config)
         rendered = render_outputs(context.video_path, pose_frames, str(self.outputs_dir))
 
+        detected_club = None
+        if isinstance(club_detection, dict):
+            recognition = club_detection.get("recognition") or {}
+            detected_club = recognition.get("predicted_club") or club_detection.get("category")
+
+        summary = self._build_summary(detected_club, score, feedback)
+        advanced = {
+            "metrics": metrics,
+            "pose_frame_count": len(pose_frames),
+            "body_tracking": body_tracking,
+            "model_outputs": {
+                "club_detection": club_detection,
+                "club_classification": club_classification,
+                "loft_recognition": loft_recognition,
+                "score": score,
+            },
+            "outputs": rendered,
+        }
+
         result = {
             "analysis_id": analysis_id,
             "club_detection": club_detection,
             "club_classification": club_classification,
             "loft_recognition": loft_recognition,
             "final_club_category": final_club_category,
+            "detected_club": detected_club,
             "pose_frame_count": len(pose_frames),
             "body_tracking": body_tracking,
             "metrics": metrics,
@@ -73,11 +93,40 @@ class AnalysisService:
             "feedback": feedback,
             "outputs": rendered,
             "input_video": context.video_path,
+            "summary": summary,
+            "advanced": advanced,
         }
 
         self._results[analysis_id] = result
         self._persist_result(analysis_id, result)
         return result
+
+    @staticmethod
+    def _build_summary(detected_club: Optional[str], score: Dict, feedback: object) -> Dict:
+        overall_score = score.get("overall_score") if isinstance(score, dict) else None
+
+        takeaways = []
+        focus = None
+        if isinstance(feedback, dict):
+            key = feedback.get("key_suggestions") or []
+            body = feedback.get("body_position") or []
+            path = feedback.get("club_path") or []
+            takeaways = [*key, *body, *path][:3]
+            focus_candidates = [*body, *path, *key]
+            focus = focus_candidates[0] if focus_candidates else None
+        elif isinstance(feedback, list):
+            takeaways = [str(item) for item in feedback[:3]]
+            focus = str(feedback[0]) if feedback else None
+
+        if not focus:
+            focus = "Keep your tempo smooth and finish balanced."
+
+        return {
+            "overall_score": overall_score,
+            "confirmed_club": detected_club or "Unknown",
+            "takeaways": takeaways,
+            "focus": focus,
+        }
 
     def get_result(self, analysis_id: str) -> Optional[Dict]:
         if analysis_id in self._results:

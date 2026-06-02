@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from functools import lru_cache
+from pathlib import Path
 from typing import Dict, Optional, Tuple
 
 from PIL import Image
@@ -86,10 +87,11 @@ def detect_club_head(image: Image.Image, config: Dict) -> ClubHeadDetection:
     confidence_threshold = float(settings.get("detector_confidence_threshold", 0.4))
     class_name = settings.get("yolo_class_name")
 
-    # TODO: Load YOLOv8 weights and return the best bounding box for the club head.
-    # This stub attempts to use ultralytics if installed, otherwise returns the full frame.
     try:
-        model = _get_yolo_model(model_path)
+        path = Path(model_path).expanduser()
+        if not path.exists():
+            raise FileNotFoundError(f"YOLO model not found at {path}")
+        model = _get_yolo_model(str(path))
         if model is None:
             raise RuntimeError("YOLO model not available")
         results = model.predict(image, conf=confidence_threshold, verbose=False)
