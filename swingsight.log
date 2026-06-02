@@ -6,23 +6,15 @@
  * Restarting with stat
  * Debugger is active!
  * Debugger PIN: 451-629-467
-127.0.0.1 - - [02/Jun/2026 19:15:43] "GET / HTTP/1.1" 200 -
-127.0.0.1 - - [02/Jun/2026 19:15:44] "GET / HTTP/1.1" 200 -
-127.0.0.1 - - [02/Jun/2026 19:15:44] "GET /static/css/dashboard.css HTTP/1.1" 200 -
-127.0.0.1 - - [02/Jun/2026 19:15:44] "GET /static/css/dashboard.css HTTP/1.1" 200 -
-127.0.0.1 - - [02/Jun/2026 19:15:44] "GET /static/js/dashboard.js HTTP/1.1" 200 -
-127.0.0.1 - - [02/Jun/2026 19:15:44] "GET /static/js/dashboard.js HTTP/1.1" 200 -
-127.0.0.1 - - [02/Jun/2026 19:16:02] "POST /api/club-detect HTTP/1.1" 200 -
-127.0.0.1 - - [02/Jun/2026 19:16:02] "POST /api/club-detect HTTP/1.1" 200 -
-127.0.0.1 - - [02/Jun/2026 19:16:03] "POST /api/club-detect HTTP/1.1" 200 -
-127.0.0.1 - - [02/Jun/2026 19:16:04] "POST /api/club-detect HTTP/1.1" 200 -
-127.0.0.1 - - [02/Jun/2026 19:16:04] "POST /api/club-detect HTTP/1.1" 200 -
-127.0.0.1 - - [02/Jun/2026 19:16:05] "POST /api/club-detect HTTP/1.1" 200 -
-127.0.0.1 - - [02/Jun/2026 19:16:08] "POST /api/club-detect HTTP/1.1" 200 -
-127.0.0.1 - - [02/Jun/2026 19:16:08] "POST /api/club-detect HTTP/1.1" 200 -
-127.0.0.1 - - [02/Jun/2026 19:16:09] "POST /api/club-detect HTTP/1.1" 200 -
-127.0.0.1 - - [02/Jun/2026 19:16:10] "POST /api/club-detect HTTP/1.1" 200 -
-127.0.0.1 - - [02/Jun/2026 19:16:10] "POST /api/club-detect HTTP/1.1" 200 -
-127.0.0.1 - - [02/Jun/2026 19:16:11] "POST /api/club-detect HTTP/1.1" 200 -
-/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/multiprocessing/resource_tracker.py:400: UserWarning: resource_tracker: There appear to be 1 leaked semaphore objects to clean up at shutdown: {'/mp-g_jfk5zd'}
+127.0.0.1 - - [02/Jun/2026 19:27:26] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [02/Jun/2026 19:27:26] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [02/Jun/2026 19:27:26] "[36mGET /static/css/dashboard.css HTTP/1.1[0m" 304 -
+127.0.0.1 - - [02/Jun/2026 19:27:26] "[36mGET /static/js/dashboard.js HTTP/1.1[0m" 304 -
+127.0.0.1 - - [02/Jun/2026 19:27:42] "POST /api/club-detect HTTP/1.1" 200 -
+127.0.0.1 - - [02/Jun/2026 19:27:43] "POST /api/club-detect HTTP/1.1" 200 -
+127.0.0.1 - - [02/Jun/2026 19:27:43] "POST /api/club-detect HTTP/1.1" 200 -
+127.0.0.1 - - [02/Jun/2026 19:27:44] "POST /api/club-detect HTTP/1.1" 200 -
+127.0.0.1 - - [02/Jun/2026 19:27:45] "POST /api/club-detect HTTP/1.1" 200 -
+127.0.0.1 - - [02/Jun/2026 19:27:45] "POST /api/club-detect HTTP/1.1" 200 -
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/multiprocessing/resource_tracker.py:400: UserWarning: resource_tracker: There appear to be 1 leaked semaphore objects to clean up at shutdown: {'/mp-n379ylle'}
   warnings.warn(

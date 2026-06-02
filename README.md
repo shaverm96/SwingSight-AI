@@ -37,6 +37,8 @@ SwingSight-AI/
   models/
   notebooks/
   outputs/
+    experiments/
+    overlays/
   reports/
   uploads/
   src/
@@ -76,10 +78,45 @@ SwingSight-AI/
         storage.py
   tests/
     test_smoke.py
+  notebooks/
+    01_golfdb_video_model_training.ipynb
+  data/
+    raw/
+    processed/
+    frames/
+    splits/
+  models/
+    pretrained/
+    trained/
+  outputs/
+    experiments/
+    overlays/
   config.example.yaml
   requirements.txt
   README.md
 ```
+
+## Research Notebook
+
+The notebook [notebooks/01_golfdb_video_model_training.ipynb](notebooks/01_golfdb_video_model_training.ipynb) is a separate research and training workspace for the Kaggle golf swing videos dataset. It is designed to help with preprocessing, frame extraction, pose experiments, weak labeling, and artifact export without changing the scope of the local dashboard.
+
+What it does:
+
+- downloads or reuses the Kaggle dataset locally
+- inventories videos and metadata
+- extracts frames into `data/frames/`
+- creates train/validation/test split files in `data/splits/`
+- tests pretrained YOLOv8 pose and detector models
+- saves overlays and experiment outputs in `outputs/experiments/` and `outputs/overlays/`
+- prepares files that can later feed the backend and dashboard
+
+Recommended Kaggle setup:
+
+```bash
+pip install kagglehub opencv-python ultralytics torch torchvision pandas numpy scikit-learn matplotlib tqdm pillow --no-warn-script-location
+```
+
+If you use the Kaggle API directly, place `kaggle.json` in `~/.kaggle/` before downloading.
 
 ## Backend Endpoints
 
@@ -129,6 +166,19 @@ The dashboard JavaScript calls backend APIs with `fetch`:
 3. Submit analysis request as JSON (`video_upload_id`)
 4. Render returned JSON metrics, score, and feedback in the UI
 5. Request PDF/DOCX generation and trigger local file download
+
+## Notebook Output to App Connection
+
+The notebook supports the model-building workflow, while the app stays beginner-friendly.
+
+- save trained weights to `models/trained/`
+- keep base or downloaded weights in `models/pretrained/`
+- save processed metadata to `data/processed/`
+- save extracted frames to `data/frames/`
+- save train/validation/test split files to `data/splits/`
+- save overlays and experiment outputs to `outputs/experiments/` and `outputs/overlays/`
+- load the final inference helpers from the Python backend modules
+- keep the dashboard focused on coach-style feedback and avoid exposing technical model details by default
 
 ## Backend Response Format (Simple + Advanced)
 
