@@ -6,10 +6,6 @@ from flask import Blueprint, Response, current_app, jsonify, render_template, re
 
 from webapp.services.analysis_service import AnalysisContext, AnalysisService
 from webapp.utils.storage import save_filestorage
-from webapp.inference.pipeline_components import (
-    detect_club_from_frame,
-    check_body_visibility_from_frame,
-)
 
 
 dashboard_bp = Blueprint("dashboard", __name__)
@@ -21,7 +17,9 @@ def _service() -> AnalysisService:
     global analysis_service
     if analysis_service is None:
         config = current_app.config["SWINGSIGHT_CONFIG"]
-        analysis_service = AnalysisService(config)
+        model_manager = current_app.extensions.get("swing_model_manager")
+        coaching_engine = current_app.extensions.get("swing_coaching_engine")
+        analysis_service = AnalysisService(config, model_manager=model_manager, coaching_engine=coaching_engine)
     return analysis_service
 
 
@@ -78,7 +76,7 @@ def club_detect() -> Response:
 
     service = _service()
     file_id, file_path = save_filestorage(frame, service.uploads_dir, "frame")
-    result = detect_club_from_frame(file_path, current_app.config["SWINGSIGHT_CONFIG"])
+    result = current_app.extensions["swing_model_manager"].detect_club(file_path)
     return jsonify({"upload_id": file_id, "file_name": Path(file_path).name, "result": result})
 
 
@@ -91,7 +89,7 @@ def body_check() -> Response:
 
     service = _service()
     file_id, file_path = save_filestorage(frame, service.uploads_dir, "frame")
-    check = check_body_visibility_from_frame(file_path, current_app.config["SWINGSIGHT_CONFIG"])
+    check = current_app.extensions["swing_model_manager"].check_body_visibility(file_path)
     return jsonify({"upload_id": file_id, "file_name": Path(file_path).name, "check": check})
 
 
@@ -158,6 +156,36 @@ def get_results(analysis_id: str) -> Response:
     if result is None:
         return jsonify({"error": "analysis_id not found"}), 404
     return jsonify(result)
+
+
+@dashboard_bp.get("/api/artifacts/<analysis_id>")
+def get_artifacts(analysis_id: str) -> Response:
+    result = _service().get_result(analysis_id)
+    if result is None:
+        return jsonify({"error": "analysis_id not found"}), 404
+
+    return jsonify(
+        {
+            "analysis_id": analysis_id,
+            "overlay_files": result.get("overlay_files", []),
+            "advanced_metrics": result.get("advanced_metrics", {}),
+        }
+    )
+
+
+@dashboard_bp.get("/api/analysis-assets/<analysis_id>")
+def analysis_assets(analysis_id: str) -> Response:
+    result = _service().get_result(analysis_id)
+    if result is None:
+        return jsonify({"error": "analysis_id not found"}), 404
+    return jsonify(
+        {
+            "analysis_id": analysis_id,
+            "overlay_files": result.get("overlay_files", []),
+            "advanced_metrics": result.get("advanced_metrics", {}),
+            "summary": result.get("summary", {}),
+        }
+    )
 
 
 @dashboard_bp.post("/api/reports/<analysis_id>")

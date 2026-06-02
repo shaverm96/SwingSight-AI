@@ -2,7 +2,6 @@ const state = {
   videoUploadId: null,
   analysisId: null,
   mediaStream: null,
-  lastPreviewUrl: null,
   recording: false,
 };
 
@@ -11,7 +10,6 @@ const uploadTrigger = document.getElementById("uploadTrigger");
 const recordTrigger = document.getElementById("recordTrigger");
 const startGuideButton = document.getElementById("startGuideButton");
 const cancelRecordButton = document.getElementById("cancelRecordButton");
-
 const recordPanel = document.getElementById("recordPanel");
 const resultsPanel = document.getElementById("resultsPanel");
 const livePreview = document.getElementById("livePreview");
@@ -138,16 +136,15 @@ async function runGuidedCapture() {
 
   updateStep("Ready");
   updateStatus("Ready. Swing away.");
-  await new Promise((r) => setTimeout(r, 1000));
+  await wait(1000);
   const videoBlob = await recordSwing(5500);
 
   updateStep("Uploading");
   updateStatus("Uploading your swing...");
   const uploadPayload = await uploadRecordedSwing(videoBlob);
   state.videoUploadId = uploadPayload.upload_id;
-  state.lastPreviewUrl = uploadPayload.preview_url || `/uploads/${uploadPayload.file_name}`;
   analysisPreview.srcObject = null;
-  analysisPreview.src = state.lastPreviewUrl;
+  analysisPreview.src = uploadPayload.preview_url || `/uploads/${uploadPayload.file_name}`;
 
   updateStep("Analyzing");
   await runAnalysis("/api/analyze-swing", { video_upload_id: state.videoUploadId });
@@ -155,8 +152,7 @@ async function runGuidedCapture() {
 }
 
 async function attemptClubRecognition() {
-  const maxAttempts = 6;
-  for (let i = 0; i < maxAttempts; i++) {
+  for (let i = 0; i < 6; i++) {
     const resp = await postFrame("/api/club-detect");
     const result = resp.result || resp;
     const status = result?.status || (result?.confidence >= 0.6 ? "confirmed" : "uncertain");
@@ -169,8 +165,7 @@ async function attemptClubRecognition() {
 }
 
 async function attemptBodyCheck() {
-  const maxAttempts = 8;
-  for (let i = 0; i < maxAttempts; i++) {
+  for (let i = 0; i < 8; i++) {
     const resp = await postFrame("/api/body-check");
     const check = resp.check || resp;
     if (check?.visible) {
@@ -190,13 +185,13 @@ async function postFrame(endpoint) {
 }
 
 async function captureFrameBlob() {
-  const w = livePreview.videoWidth || 640;
-  const h = livePreview.videoHeight || 480;
+  const width = livePreview.videoWidth || 640;
+  const height = livePreview.videoHeight || 480;
   const canvas = document.createElement("canvas");
-  canvas.width = w;
-  canvas.height = h;
+  canvas.width = width;
+  canvas.height = height;
   const ctx = canvas.getContext("2d");
-  ctx.drawImage(livePreview, 0, 0, w, h);
+  ctx.drawImage(livePreview, 0, 0, width, height);
   return new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
 }
 
@@ -218,26 +213,26 @@ async function recordSwing(durationMs) {
 }
 
 async function uploadRecordedSwing(blob) {
-  const fd = new FormData();
-  fd.append("video", blob, "swing.webm");
-  const resp = await fetch("/api/record-swing", { method: "POST", body: fd });
-  if (!resp.ok) {
+  const formData = new FormData();
+  formData.append("video", blob, "swing.webm");
+  const response = await fetch("/api/record-swing", { method: "POST", body: formData });
+  if (!response.ok) {
     throw new Error("Recording upload failed");
   }
-  return resp.json();
+  return response.json();
 }
 
 async function runAnalysis(endpoint, payload) {
   updateStatus("Analyzing your swing...");
-  const resp = await fetch(endpoint, {
+  const response = await fetch(endpoint, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  if (!resp.ok) {
+  if (!response.ok) {
     throw new Error("Analysis request failed");
   }
-  const result = await resp.json();
+  const result = await response.json();
   state.analysisId = result.analysis_id;
   renderResults(result);
   updateStatus("Analysis complete.");
@@ -282,10 +277,9 @@ async function requestReport(format) {
 }
 
 function renderResults(result) {
-  const summary = result?.summary || {};
-  const detectedClub = summary.confirmed_club || result?.detected_club || "Unknown";
-  const score = summary.overall_score ?? result?.score?.overall_score;
-  const overlayPath = result?.outputs?.annotated_video_path;
+  const detectedClub = result?.club || result?.detected_club || "Unknown";
+  const score = Number(result?.swing_score);
+  const overlayFiles = Array.isArray(result?.overlay_files) ? result.overlay_files : [];
 
   analysisIdValue.textContent = result.analysis_id || "--";
   detectedClubValue.textContent = detectedClub;
@@ -294,33 +288,31 @@ function renderResults(result) {
   swingScoreDetail.textContent = Number.isFinite(score) ? `${Math.round(score)}` : "--";
   swingGradeValue.textContent = scoreToGrade(score);
 
-  if (overlayPath) {
-    const fileName = overlayPath.split("/").slice(-1)[0];
-    overlayLink.href = `/outputs/${fileName}`;
+  if (overlayFiles.length) {
+    const firstOverlay = overlayFiles[0];
+    overlayLink.href = `/${firstOverlay}`;
     overlayLink.classList.remove("hidden");
   } else {
     overlayLink.href = "#";
     overlayLink.classList.add("hidden");
   }
 
-  const takeaways = summary.takeaways || [];
-  renderFeedbackSection(takeawayList, takeaways);
-  focusText.textContent = summary.focus || "Keep your tempo smooth and finish balanced.";
+  renderFeedbackSection(takeawayList, result?.strengths || []);
+  focusText.textContent = result?.next_focus || "Keep your tempo smooth and finish balanced.";
 
-  const advanced = result?.advanced || {
-    metrics: result?.metrics,
-    body_tracking: result?.body_tracking,
-    model_outputs: {
-      club_detection: result?.club_detection,
-      club_classification: result?.club_classification,
-      loft_recognition: result?.loft_recognition,
-      score: result?.score,
+  advancedMetrics.textContent = JSON.stringify(result?.advanced_metrics || {}, null, 2);
+  advancedTracking.textContent = JSON.stringify(result?.advanced_metrics?.pose || {}, null, 2);
+  advancedModels.textContent = JSON.stringify(
+    {
+      club: result?.club,
+      swing_score: result?.swing_score,
+      strengths: result?.strengths,
+      improvements: result?.improvements,
+      overlay_files: result?.overlay_files,
     },
-  };
-
-  advancedMetrics.textContent = JSON.stringify(advanced.metrics || {}, null, 2);
-  advancedTracking.textContent = JSON.stringify(advanced.body_tracking || {}, null, 2);
-  advancedModels.textContent = JSON.stringify(advanced.model_outputs || {}, null, 2);
+    null,
+    2,
+  );
 }
 
 function renderFeedbackSection(listEl, items) {
