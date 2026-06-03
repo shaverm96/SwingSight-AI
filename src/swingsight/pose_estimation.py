@@ -1,7 +1,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, Iterable, List, Protocol
+from pathlib import Path
+from typing import Dict, Iterable, List, Optional, Protocol
+
+import cv2
+
+try:
+    from ultralytics import YOLO
+except Exception:  # pragma: no cover - optional dependency
+    YOLO = None
 
 
 COCO_KEYPOINTS = [
@@ -61,19 +69,79 @@ class YoloPoseEstimator:
     def __init__(self, model_path: str, confidence_threshold: float) -> None:
         self.model_path = model_path
         self.confidence_threshold = confidence_threshold
+        self._model = None
+
+    def _load_model(self):
+        if self._model is not None:
+            return self._model
+        if YOLO is None:
+            return None
+
+        candidate_paths = []
+        if self.model_path:
+            candidate_paths.append(self.model_path)
+        candidate_paths.append("yolov8n-pose.pt")
+
+        for candidate in candidate_paths:
+            try:
+                self._model = YOLO(candidate)
+                return self._model
+            except Exception:
+                continue
+        return None
 
     def infer(self, video_path: str) -> List[PoseFrame]:
-        _ = video_path
-        # TODO: run YOLOv8-pose and return PoseFrame objects.
-        return []
+        model = self._load_model()
+        if model is None:
+            return []
+
+        capture = cv2.VideoCapture(str(video_path))
+        if not capture.isOpened():
+            return []
+
+        fps = float(capture.get(cv2.CAP_PROP_FPS) or 0.0)
+        frame_step = max(1, int(round(fps / 2.0))) if fps > 0 else 1
+        frames: List[PoseFrame] = []
+        frame_index = 0
+
+        while True:
+            success, frame = capture.read()
+            if not success:
+                break
+
+            if frame_index % frame_step == 0:
+                timestamp_sec = frame_index / fps if fps > 0 else float(frame_index)
+                landmarks: Dict[str, Landmark] = {}
+
+                try:
+                    results = model.predict(frame, verbose=False)
+                    result = results[0] if results else None
+                    keypoints = getattr(result, "keypoints", None)
+                    if keypoints is not None and getattr(keypoints, "xy", None) is not None:
+                        xy = keypoints.xy.cpu().numpy()
+                        conf = keypoints.conf.cpu().numpy() if getattr(keypoints, "conf", None) is not None else None
+                        if len(xy) > 0:
+                            person_xy = xy[0]
+                            person_conf = conf[0] if conf is not None and len(conf) > 0 else [1.0] * len(person_xy)
+                            landmarks = map_keypoints(person_xy, person_conf)
+                except Exception:
+                    landmarks = {}
+
+                frames.append(PoseFrame(frame_index=frame_index, timestamp_sec=timestamp_sec, landmarks=landmarks))
+
+            frame_index += 1
+
+        capture.release()
+        return frames
 
 
 def build_pose_estimator(config: Dict) -> PoseEstimator:
     settings = config.get("pose_estimation", {})
     backend = settings.get("backend", "dummy")
-    if backend == "yolov8_pose":
+    model_path = settings.get("model_path", "")
+    if backend == "yolov8_pose" or YOLO is not None:
         return YoloPoseEstimator(
-            model_path=settings.get("model_path", ""),
+            model_path=str(model_path),
             confidence_threshold=float(settings.get("confidence_threshold", 0.4)),
         )
 

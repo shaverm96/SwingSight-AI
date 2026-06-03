@@ -15,7 +15,7 @@ import cv2
 from swingsight.club_recognition import recognize_club_from_frame
 from swingsight.metrics import compute_swing_metrics
 from swingsight.pose_estimation import run_pose_estimation
-from swingsight.visualization import render_annotated_video
+from backend.services.overlay_generator import generate_pose_overlay
 from webapp.inference.pipeline_components import check_body_visibility_from_frame
 from webapp.utils.storage import ensure_dir
 
@@ -315,6 +315,164 @@ class ModelManager:
     def load_metadata_files(self) -> Dict[str, pd.DataFrame]:
         return self.metadata or self.load_metadata()
 
+    def validate_video(self, video_path: str | Path) -> Dict[str, Any]:
+        video_file = Path(video_path)
+        metadata: Dict[str, Any] = {
+            "video_path": str(video_file),
+            "exists": video_file.exists(),
+            "readable": False,
+            "frame_count": None,
+            "fps": None,
+            "width": None,
+            "height": None,
+            "duration_seconds": None,
+        }
+
+        if not video_file.exists() or not video_file.is_file():
+            metadata["error"] = "Uploaded video file was not found."
+            return metadata
+
+        capture = cv2.VideoCapture(str(video_file))
+        if not capture.isOpened():
+            capture.release()
+            metadata["error"] = "OpenCV could not open the uploaded video."
+            return metadata
+
+        fps = float(capture.get(cv2.CAP_PROP_FPS) or 0.0)
+        frame_count = int(capture.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+        width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH) or 0)
+        height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0)
+        capture.release()
+
+        metadata.update(
+            {
+                "readable": frame_count > 0 and width > 0 and height > 0,
+                "frame_count": frame_count or None,
+                "fps": fps or None,
+                "width": width or None,
+                "height": height or None,
+                "duration_seconds": (frame_count / fps) if frame_count > 0 and fps > 0 else None,
+            }
+        )
+
+        if not metadata["readable"]:
+            metadata["error"] = "The uploaded video could not be read by OpenCV."
+        return metadata
+
+    def extract_fallback_frames(self, video_path: str | Path, video_metadata: Optional[Dict[str, Any]] = None, limit: int = 8) -> list[Dict[str, Any]]:
+        video_file = Path(video_path)
+        if not video_file.exists():
+            return []
+
+        capture = cv2.VideoCapture(str(video_file))
+        if not capture.isOpened():
+            capture.release()
+            return []
+
+        fps = float((video_metadata or {}).get("fps") or capture.get(cv2.CAP_PROP_FPS) or 0.0)
+        frame_step = max(1, int(round(fps / 2.0))) if fps > 0 else 1
+        fallback_dir = ensure_dir(self.experiments_dir / "fallback_frames" / video_file.stem)
+        rows: list[Dict[str, Any]] = []
+        frame_index = 0
+        saved_index = 0
+
+        while True:
+            success, frame = capture.read()
+            if not success:
+                break
+            if frame_index % frame_step == 0:
+                frame_path = fallback_dir / f"frame_{saved_index:03d}.jpg"
+                cv2.imwrite(str(frame_path), frame)
+                rows.append(
+                    {
+                        "frame_index": frame_index,
+                        "frame_path": str(frame_path),
+                        "timestamp_seconds": frame_index / fps if fps > 0 else None,
+                    }
+                )
+                saved_index += 1
+                if saved_index >= limit:
+                    break
+            frame_index += 1
+
+        capture.release()
+        return rows
+
+    def _pose_model_runtime(self) -> Dict[str, Any]:
+        record = self.models.get("pose_model", {})
+        model = record.get("model")
+        if model is not None and record.get("loader") == "ultralytics":
+            return {"loaded": True, "loader": "ultralytics", "path": record.get("path"), "model": model, "source": "custom"}
+
+        if YOLO is None:
+            return {"loaded": False, "loader": "missing", "path": None, "model": None, "source": "unavailable"}
+
+        pose_settings = self.config.get("pose_estimation", {})
+        candidate_paths = []
+        configured_path = pose_settings.get("model_path")
+        if configured_path:
+            candidate_paths.append(configured_path)
+        candidate_paths.append(self.models_dir / "pretrained" / "yolov8n-pose.pt")
+        candidate_paths.append("yolov8n-pose.pt")
+
+        for candidate in candidate_paths:
+            try:
+                model = YOLO(str(candidate))
+                return {"loaded": True, "loader": "ultralytics", "path": str(candidate), "model": model, "source": "pretrained"}
+            except Exception as exc:
+                self.logger.info("Pose model candidate unavailable (%s): %s", candidate, exc)
+
+        return {"loaded": False, "loader": "missing", "path": None, "model": None, "source": "unavailable"}
+
+    def _save_pose_landmark_rows(self, video_path: str | Path, pose_frames: list[Dict[str, Any]]) -> Optional[str]:
+        if not pose_frames:
+            return None
+
+        rows: list[Dict[str, Any]] = []
+        video_file = Path(video_path)
+        for frame in pose_frames:
+            frame_index = frame.get("frame_index")
+            timestamp_sec = frame.get("timestamp_sec")
+            landmarks = frame.get("landmarks", {}) or {}
+            for name, landmark in landmarks.items():
+                rows.append(
+                    {
+                        "video_id": video_file.stem,
+                        "frame_number": frame_index,
+                        "timestamp": timestamp_sec,
+                        "club_type": "unknown",
+                        "keypoint_name": name,
+                        "x": landmark.get("x"),
+                        "y": landmark.get("y"),
+                        "confidence": landmark.get("visibility"),
+                    }
+                )
+
+        if not rows:
+            return None
+
+        output_path = self.experiments_dir / "pose_landmarks.csv"
+        pd.DataFrame(rows).to_csv(output_path, index=False)
+        return str(output_path)
+
+    def _fallback_score_label(self, metrics: Dict[str, Optional[float]], video_processed: bool, pose_frames_detected: int) -> str:
+        metric_values = [value for value in metrics.values() if value is not None]
+        if not video_processed:
+            return "Analysis incomplete"
+        if pose_frames_detected == 0 or not metric_values:
+            return "Needs clearer video"
+        if len(metric_values) < 3:
+            return "Needs clearer video"
+        average = float(sum(metric_values) / len(metric_values))
+        if average >= 80:
+            return "Strong swing"
+        if average >= 65:
+            return "Improving"
+        return "Needs clearer video"
+
+    def _fallback_club_note(self) -> str:
+        return "Club detection needs a closer view of the club head or club end."
+
     def _image_from_path(self, frame_path: str | Path) -> Image.Image:
         return Image.open(frame_path).convert("RGB")
 
@@ -325,6 +483,9 @@ class ModelManager:
             return f"/outputs/{relative.as_posix()}"
         except Exception:
             return f"/outputs/{path.name}"
+
+    def _public_upload_url(self, file_path: str | Path) -> str:
+        return f"/uploads/{Path(file_path).name}"
 
     def collect_overlay_files(self, token: Optional[str] = None) -> list[str]:
         search_roots = [self.overlays_dir, self.experiments_dir]
@@ -353,14 +514,30 @@ class ModelManager:
         return sorted(dict.fromkeys(fallback[:5]))
 
     def detect_club(self, frame: str | Path) -> Dict[str, Any]:
+        if not self.models.get("club_detector", {}).get("available", False):
+            return {
+                "club": "Not detected",
+                "detected_club": "Not detected",
+                "confidence": 0.0,
+                "status": "not_detected",
+                "bbox": None,
+                "reasoning": self._fallback_club_note(),
+                "sources": {"detector": "missing"},
+                "raw": {},
+            }
+
         frame_path = Path(frame)
         result = recognize_club_from_frame(str(frame_path), self.config)
-        predicted_club = result.get("predicted_club") or result.get("category") or "Unknown"
+        predicted_club = result.get("predicted_club") or result.get("category")
+        confidence = float(result.get("confidence", 0.0))
+        threshold = float(self.config.get("club_recognition", {}).get("detector_confidence_threshold", 0.6))
+        if not predicted_club or confidence < threshold:
+            predicted_club = "Not detected"
         return {
             "club": predicted_club,
             "detected_club": predicted_club,
-            "confidence": float(result.get("confidence", 0.0)),
-            "status": result.get("status", "confirmed" if result.get("confidence", 0.0) >= 0.6 else "uncertain"),
+            "confidence": confidence,
+            "status": result.get("status", "confirmed" if confidence >= threshold else "not_detected"),
             "bbox": result.get("bbox"),
             "reasoning": result.get("reasoning"),
             "sources": result.get("sources", {}),
@@ -371,45 +548,132 @@ class ModelManager:
         return check_body_visibility_from_frame(str(frame), self.config)
 
     def analyze_pose(self, video_path: str | Path) -> Dict[str, Any]:
-        video_path = str(video_path)
-        pose_frames = run_pose_estimation(video_path, self.config)
-        live_metrics = compute_swing_metrics(pose_frames, self.config)
-        rendered = render_annotated_video(video_path, pose_frames, str(self.outputs_dir))
-        body_tracking = {
-            "tracked_parts": {
-                "feet": ["left_ankle", "right_ankle"],
-                "knees": ["left_knee", "right_knee"],
-                "hips": ["left_hip", "right_hip"],
-                "spine_angle": ["left_hip", "right_hip", "left_shoulder", "right_shoulder"],
-                "shoulders": ["left_shoulder", "right_shoulder"],
-                "elbows": ["left_elbow", "right_elbow"],
-                "hands": ["left_wrist", "right_wrist"],
-                "neck": ["left_shoulder", "right_shoulder", "nose"],
-                "head": ["nose", "left_eye", "right_eye", "left_ear", "right_ear"],
-            },
-            "frame_count": len(pose_frames),
-            "source": "yolov8_pose_stub" if not pose_frames else "yolov8_pose",
+        video_file = Path(video_path)
+        validation = self.validate_video(video_file)
+        if validation.get("error"):
+            raise ValueError(validation["error"])
+
+        fallback_frames = self.extract_fallback_frames(video_file, validation)
+        pose_runtime = self._pose_model_runtime()
+        pose_frames = run_pose_estimation(str(video_file), self.config) if pose_runtime["loaded"] else []
+        pose_landmarks_csv = self._save_pose_landmark_rows(video_file, pose_frames)
+        technical_metrics = compute_swing_metrics(pose_frames, self.config) if pose_frames else {
+            "hip_rotation": None,
+            "shoulder_rotation": None,
+            "spine_angle": None,
+            "head_stability": None,
+            "weight_shift": None,
         }
 
-        artifact_metrics = self.pose_metrics or summarize_pose_artifacts(self.experiment_artifacts)
-        technical_metrics = self._merge_metrics(live_metrics, artifact_metrics)
-        overlay_files = self.collect_overlay_files(Path(video_path).stem)
-        if rendered:
-            overlay_files = sorted(dict.fromkeys([*overlay_files, self._public_output_url(rendered)]))
+        pose_frames_detected = sum(1 for frame in pose_frames if frame.get("landmarks"))
+        pose_frames_processed = len(pose_frames)
+
+        overlay_result = generate_pose_overlay(
+            video_file,
+            pose_frames,
+            self.overlays_dir,
+            pose_landmarks_path=pose_landmarks_csv,
+        )
+        overlay_video_path = overlay_result.get("overlay_video_path")
+        overlay_video_url = overlay_result.get("overlay_video_url")
+        overlay_files = self.collect_overlay_files(video_file.stem)
+        if overlay_video_url:
+            overlay_files = sorted(dict.fromkeys([overlay_video_url, *overlay_files]))
+        elif overlay_video_path:
+            overlay_files = sorted(dict.fromkeys([self._public_output_url(overlay_video_path), *overlay_files]))
+
+        club_source = fallback_frames[0]["frame_path"] if fallback_frames else self._default_club_frame(str(video_file))
+        club_detection = self.detect_club(club_source) if club_source else {
+            "club": "Not detected",
+            "detected_club": "Not detected",
+            "confidence": 0.0,
+            "status": "not_detected",
+            "bbox": None,
+            "reasoning": None,
+            "sources": {"detector": "fallback_default"},
+            "raw": {},
+        }
+
+        if club_detection.get("club") in {None, "Unknown", "", "Driver", "Iron", "Hybrid", "Wood", "Wedge"} and not self.models.get("club_detector", {}).get("available", False):
+            club_detection["club"] = "Not detected"
+            club_detection["detected_club"] = "Not detected"
+
+        warnings: list[str] = []
+        if pose_frames_processed == 0:
+            warnings.append("Pose tracking did not detect enough landmarks in the uploaded video.")
+        if not pose_runtime["loaded"]:
+            warnings.append("Using pretrained pose fallback or frame-level fallback analysis.")
+        if not overlay_result.get("success", False):
+            warnings.extend(overlay_result.get("warnings", []))
+            warnings.append(overlay_result.get("message", "Pose tracking could not be generated from this video."))
+        if club_detection.get("club") == "Not detected":
+            warnings.append(self._fallback_club_note())
+
+        self.logger.info("Video received: %s", video_file)
+        self.logger.info("Video readable: %s", validation)
+        self.logger.info("Frames extracted: %s", len(fallback_frames))
+        self.logger.info("Pose model loaded: %s", pose_runtime["loaded"])
+        self.logger.info("Pose frames processed: %s", pose_frames_processed)
+        self.logger.info("Metrics generated: %s", technical_metrics)
+        self.logger.info("Club detection result: %s", club_detection)
+
+        fallback_used = not self.models.get("pose_model", {}).get("available", False) or not self.models.get("club_detector", {}).get("available", False)
+
+        model_outputs = {
+            "pose_model_loaded": bool(pose_runtime["loaded"]),
+            "club_model_loaded": bool(self.models.get("club_detector", {}).get("available", False)),
+            "fallback_used": fallback_used,
+            "pose_model_source": pose_runtime.get("source"),
+            "club_model_source": self.models.get("club_detector", {}).get("loader", "missing"),
+        }
+
+        tracking = {
+            "pose_frames_processed": pose_frames_processed,
+            "pose_frames_detected": pose_frames_detected,
+            "video_fps": validation.get("fps"),
+            "frame_count": validation.get("frame_count"),
+            "duration_seconds": validation.get("duration_seconds"),
+            "detection_rate": overlay_result.get("detection_rate"),
+            "average_confidence": overlay_result.get("average_confidence"),
+        }
+
+        debug = {
+            "video_metadata": validation,
+            "model_load_status": model_outputs,
+            "fallback_status": {
+                "used": model_outputs["fallback_used"],
+                "fallback_frames_dir": str((self.experiments_dir / "fallback_frames" / video_file.stem).resolve()),
+                "pose_landmarks_csv": pose_landmarks_csv,
+                "overlay_video_path": overlay_video_path,
+            },
+            "file_paths": {
+                "video_path": str(video_file),
+                "pose_landmarks_csv": pose_landmarks_csv,
+                "overlay_video_path": overlay_video_path,
+                "fallback_frames_dir": str((self.experiments_dir / "fallback_frames" / video_file.stem).resolve()),
+            },
+        }
 
         return {
-            "video_path": video_path,
-            "pose_frames": pose_frames,
-            "pose_frame_count": len(pose_frames),
-            "live_metrics": live_metrics,
-            "experiment_metrics": artifact_metrics,
-            "technical_metrics": technical_metrics,
-            "body_tracking": body_tracking,
+            "status": "success",
+            "video_processed": True,
+            "video_metadata": validation,
+            "club": club_detection.get("club", "Not detected"),
+            "club_note": self._fallback_club_note() if club_detection.get("club") == "Not detected" else None,
+            "club_detection": club_detection,
+            "advanced_metrics": technical_metrics,
+            "tracking": tracking,
+            "model_outputs": model_outputs,
             "overlay_files": overlay_files,
-            "rendered_outputs": {"annotated_video_path": rendered},
-            "model_sources": {
-                "pose_model": self.models.get("pose_model", {}).get("loader", "missing"),
+            "visualization": {
+                "original_video_url": self._public_upload_url(video_file),
+                "overlay_video_url": overlay_video_url,
+                "overlay_video_path": overlay_video_path,
+                "overlay_available": bool(overlay_video_url),
             },
+            "fallback_used": model_outputs["fallback_used"],
+            "warnings": warnings,
+            "debug": debug,
         }
 
     def analyze_swing(
@@ -418,40 +682,18 @@ class ModelManager:
         club_image_path: Optional[str | Path] = None,
         manual_club_category: Optional[str] = None,
     ) -> Dict[str, Any]:
-        video_path = str(video_path)
-        club_source = club_image_path or self._default_club_frame(video_path)
-        club_detection: Dict[str, Any]
-        if club_source:
-            club_detection = self.detect_club(club_source)
-        else:
-            club_detection = {
-                "club": manual_club_category or "Unknown",
-                "detected_club": manual_club_category or "Unknown",
-                "confidence": 0.0,
-                "status": "uncertain",
-                "bbox": None,
-                "reasoning": None,
-                "sources": {"detector": "fallback_default"},
-                "raw": {},
+        _ = club_image_path
+        analysis = self.analyze_pose(video_path)
+        if manual_club_category:
+            analysis["club"] = manual_club_category
+            analysis["club_detection"] = {
+                **analysis.get("club_detection", {}),
+                "club": manual_club_category,
+                "detected_club": manual_club_category,
+                "status": "confirmed",
             }
-
-        pose_analysis = self.analyze_pose(video_path)
-        final_club = manual_club_category or club_detection.get("club") or club_detection.get("detected_club") or "Unknown"
-
-        return {
-            "club": final_club,
-            "club_detection": club_detection,
-            "pose_analysis": pose_analysis,
-            "advanced_metrics": pose_analysis.get("technical_metrics", {}),
-            "overlay_files": pose_analysis.get("overlay_files", []),
-            "metadata": self._metadata_summary(),
-            "model_outputs": {
-                "club_model": self.models.get("club_detector", {}).get("loader", "missing"),
-                "pose_model": self.models.get("pose_model", {}).get("loader", "missing"),
-                "club_classifier": self.models.get("club_classifier", {}).get("loader", "missing"),
-                "swing_classifier": self.models.get("swing_classifier", {}).get("loader", "missing"),
-            },
-        }
+            analysis["club_note"] = None
+        return analysis
 
     def _default_club_frame(self, video_path: str) -> Optional[str]:
         video_file = Path(video_path)

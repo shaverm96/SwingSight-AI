@@ -98,8 +98,6 @@
             </p>
             <h4>Confirmed Club</h4>
             <p id="detectedClubDetail">--</p>
-            <h4>Simple Visual</h4>
-            <a id="overlayLink" class="button ghost hidden" href="#" target="_blank" rel="noopener">View overlay</a>
           </article>
 
           <article class="results-card">
@@ -109,8 +107,16 @@
             <p id="focusText" class="focus-text">--</p>
           </article>
 
-          <article class="results-card">
-            <h4>Preview</h4>
+          <article class="results-card visualization-card">
+            <h4>Body Motion Visualization</h4>
+            <div class="visualization-toolbar">
+              <div class="toggle-group" role="group" aria-label="Video view toggle">
+                <button id="originalViewButton" class="button toggle is-active" type="button">Original</button>
+                <button id="overlayViewButton" class="button toggle" type="button">Pose Overlay</button>
+              </div>
+              <a id="downloadOverlayButton" class="button ghost hidden" href="#" download>Download Overlay</a>
+            </div>
+            <p id="visualizationStatus" class="visualization-status">Original video ready.</p>
             <video id="analysisPreview" controls playsinline></video>
           </article>
         </div>
@@ -123,12 +129,16 @@
               <pre id="advancedMetrics" class="output-box"></pre>
             </article>
             <article>
-              <h4>Tracking</h4>
+              <h4>Show Tracking Points</h4>
               <pre id="advancedTracking" class="output-box"></pre>
             </article>
             <article>
               <h4>Model Outputs</h4>
               <pre id="advancedModels" class="output-box"></pre>
+            </article>
+            <article>
+              <h4>Debug</h4>
+              <pre id="advancedDebug" class="output-box"></pre>
             </article>
           </div>
         </details>

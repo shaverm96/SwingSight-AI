@@ -3,38 +3,84 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import Dict, List, Optional
 
+import numpy as np
 import math
 
 
 @dataclass(frozen=True)
 class SwingMetrics:
-    spine_angle_deg: float
-    head_movement_cm: float
-    knee_flex_deg: float
-    shoulder_turn_proxy: float
-    hip_turn_proxy: float
-    balance_score: float
-    tempo_estimate: float
+    spine_angle_deg: Optional[float]
+    head_movement_cm: Optional[float]
+    knee_flex_deg: Optional[float]
+    shoulder_turn_proxy: Optional[float]
+    hip_turn_proxy: Optional[float]
+    balance_score: Optional[float]
+    tempo_estimate: Optional[float]
 
     def to_dict(self) -> Dict[str, float]:
         return dict(asdict(self))
 
 
 def _compute_from_landmarks(landmarks: List[Dict], config: Dict) -> SwingMetrics:
-    """Compute metrics from per-frame landmark dicts.
-
-    Replace with geometry-based calculations when pose inference is ready.
-    """
-    _ = landmarks
     _ = config
+
+    if not landmarks:
+        return SwingMetrics(None, None, None, None, None, None, None)
+
+    frame_metrics = [compute_frame_metrics(frame.get("landmarks", {})) for frame in landmarks if frame.get("landmarks")]
+    if not frame_metrics:
+        return SwingMetrics(None, None, None, None, None, None, None)
+
+    shoulder_tilts = [abs(metric["shoulder_tilt"]) for metric in frame_metrics if metric.get("shoulder_tilt") is not None]
+    hip_tilts = [abs(metric["hip_tilt"]) for metric in frame_metrics if metric.get("hip_tilt") is not None]
+    spine_angles = [abs(90.0 - abs(metric["spine_angle"])) for metric in frame_metrics if metric.get("spine_angle") is not None]
+    head_x = [metric["head_x"] for metric in frame_metrics if metric.get("head_x") is not None]
+    head_y = [metric["head_y"] for metric in frame_metrics if metric.get("head_y") is not None]
+    stance_widths = [metric["stance_width"] for metric in frame_metrics if metric.get("stance_width") is not None]
+    knee_flex_values = [
+        value
+        for metric in frame_metrics
+        for value in (metric.get("knee_flex_left"), metric.get("knee_flex_right"))
+        if value is not None and value > 0
+    ]
+
+    spine_angle_deg = float(np.mean(spine_angles)) if spine_angles else None
+    shoulder_turn_proxy = float(max(0.0, min(100.0, 100.0 - np.mean(shoulder_tilts) * 2.0))) if shoulder_tilts else None
+    hip_turn_proxy = float(max(0.0, min(100.0, 100.0 - np.mean(hip_tilts) * 2.0))) if hip_tilts else None
+
+    if head_x and head_y:
+        head_motion = float(np.hypot(np.std(head_x, ddof=0), np.std(head_y, ddof=0)))
+        head_movement_cm = float(max(0.0, min(100.0, 100.0 - head_motion * 180.0)))
+    else:
+        head_movement_cm = None
+
+    if len(head_x) > 1:
+        head_path = np.abs(np.diff(head_x))
+        head_variation = float(np.mean(head_path)) if len(head_path) else 0.0
+    else:
+        head_variation = 0.0
+
+    if stance_widths:
+        width_variation = float(np.std(stance_widths, ddof=0))
+        balance_score = float(max(0.0, min(100.0, 100.0 - width_variation * 200.0)))
+    else:
+        balance_score = None
+
+    if head_x:
+        tempo_estimate = float(max(0.0, min(100.0, 100.0 - head_variation * 120.0)))
+    else:
+        tempo_estimate = None
+
+    knee_flex_deg = float(np.mean(knee_flex_values)) if knee_flex_values else None
+
     return SwingMetrics(
-        spine_angle_deg=0.0,
-        head_movement_cm=0.0,
-        knee_flex_deg=0.0,
-        shoulder_turn_proxy=0.0,
-        hip_turn_proxy=0.0,
-        balance_score=0.0,
-        tempo_estimate=0.0,
+        spine_angle_deg=spine_angle_deg,
+        head_movement_cm=head_movement_cm,
+        knee_flex_deg=knee_flex_deg,
+        shoulder_turn_proxy=shoulder_turn_proxy,
+        hip_turn_proxy=hip_turn_proxy,
+        balance_score=balance_score,
+        tempo_estimate=tempo_estimate,
     )
 
 
@@ -79,34 +125,34 @@ def compute_frame_metrics(landmarks: Dict[str, Dict]) -> Dict[str, float]:
     right_shoulder = get_point(landmarks, "right_shoulder")
     nose = get_point(landmarks, "nose")
 
-    stance_width = 0.0
+    stance_width = None
     if left_ankle and right_ankle:
         stance_width = math.hypot(left_ankle[0] - right_ankle[0], left_ankle[1] - right_ankle[1])
 
-    knee_flex_left = 0.0
+    knee_flex_left = None
     if left_hip and left_knee and left_ankle:
         knee_flex_left = angle_between(left_hip, left_knee, left_ankle)
 
-    knee_flex_right = 0.0
+    knee_flex_right = None
     if right_hip and right_knee and right_ankle:
         knee_flex_right = angle_between(right_hip, right_knee, right_ankle)
 
-    hip_tilt = 0.0
+    hip_tilt = None
     if left_hip and right_hip:
         hip_tilt = line_angle(left_hip, right_hip)
 
-    shoulder_tilt = 0.0
+    shoulder_tilt = None
     if left_shoulder and right_shoulder:
         shoulder_tilt = line_angle(left_shoulder, right_shoulder)
 
-    spine_angle = 0.0
+    spine_angle = None
     if left_hip and right_hip and left_shoulder and right_shoulder:
         mid_hip = mid_point(left_hip, right_hip)
         mid_shoulder = mid_point(left_shoulder, right_shoulder)
         spine_angle = line_angle(mid_hip, mid_shoulder)
 
-    head_x = nose[0] if nose else 0.0
-    head_y = nose[1] if nose else 0.0
+    head_x = nose[0] if nose else None
+    head_y = nose[1] if nose else None
 
     return {
         "stance_width": stance_width,

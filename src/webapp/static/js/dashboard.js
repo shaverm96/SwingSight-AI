@@ -25,11 +25,20 @@ const swingGradeValue = document.getElementById("swingGradeValue");
 const takeawayList = document.getElementById("takeawayList");
 const focusText = document.getElementById("focusText");
 const overlayLink = document.getElementById("overlayLink");
+const originalViewButton = document.getElementById("originalViewButton");
+const overlayViewButton = document.getElementById("overlayViewButton");
+const downloadOverlayButton = document.getElementById("downloadOverlayButton");
+const visualizationStatus = document.getElementById("visualizationStatus");
 const downloadPdfButton = document.getElementById("downloadPdfButton");
 const downloadDocxButton = document.getElementById("downloadDocxButton");
 const advancedMetrics = document.getElementById("advancedMetrics");
 const advancedTracking = document.getElementById("advancedTracking");
 const advancedModels = document.getElementById("advancedModels");
+const advancedDebug = document.getElementById("advancedDebug");
+
+state.visualizationMode = "original";
+state.originalVideoUrl = null;
+state.overlayVideoUrl = null;
 
 uploadTrigger.addEventListener("click", () => uploadInput.click());
 
@@ -38,8 +47,31 @@ uploadInput.addEventListener("change", async () => {
   if (!file) {
     return;
   }
-  analysisPreview.src = URL.createObjectURL(file);
+  state.originalVideoUrl = URL.createObjectURL(file);
+  state.overlayVideoUrl = null;
+  setVisualizationMode("original");
+  resultsPanel.classList.remove("hidden");
+  downloadPdfButton.disabled = true;
+  downloadDocxButton.disabled = true;
+  analysisIdValue.textContent = "Uploading...";
+  detectedClubValue.textContent = "--";
+  detectedClubDetail.textContent = "--";
+  swingScoreValue.textContent = "--";
+  swingScoreDetail.textContent = "--";
+  swingGradeValue.textContent = "Waiting for analysis";
+  focusText.textContent = "--";
+  renderFeedbackSection(takeawayList, ["Uploading the video preview so you can confirm the file is visible."]);
+  visualizationStatus.textContent = "Original video preview";
+  resultsPanel.scrollIntoView({ behavior: "smooth", block: "start" });
   await handleUploadFlow(file);
+});
+
+originalViewButton.addEventListener("click", () => setVisualizationMode("original"));
+overlayViewButton.addEventListener("click", () => {
+  if (!state.overlayVideoUrl) {
+    return;
+  }
+  setVisualizationMode("overlay");
 });
 
 recordTrigger.addEventListener("click", async () => {
@@ -76,8 +108,31 @@ async function handleUploadFlow(file) {
     await runAnalysis("/api/analyze", { video_upload_id: state.videoUploadId });
   } catch (error) {
     console.error(error);
-    updateStatus("Upload failed. Please try again.");
+    updateStatus(error.message || "Upload failed. Please try again.");
+    resultsPanel.classList.remove("hidden");
+    setVisualizationMode("original");
   }
+}
+
+function setVisualizationMode(mode) {
+  state.visualizationMode = mode;
+  const showOverlay = mode === "overlay" && Boolean(state.overlayVideoUrl);
+  const nextSource = showOverlay ? state.overlayVideoUrl : state.originalVideoUrl;
+
+  if (nextSource) {
+    analysisPreview.srcObject = null;
+    analysisPreview.src = nextSource;
+    analysisPreview.currentTime = 0;
+    analysisPreview.load();
+  }
+
+  originalViewButton.classList.toggle("is-active", !showOverlay);
+  overlayViewButton.classList.toggle("is-active", showOverlay);
+  overlayViewButton.disabled = !state.overlayVideoUrl;
+  downloadOverlayButton.classList.toggle("hidden", !state.overlayVideoUrl);
+  visualizationStatus.textContent = showOverlay
+    ? "Pose overlay: body tracking and motion trails"
+    : "Original video preview";
 }
 
 async function initCamera() {
@@ -113,18 +168,6 @@ async function runGuidedCapture() {
     }
   }
 
-  updateStep("Show club end");
-  updateStatus("Show the end of your club.");
-  const clubResult = await attemptClubRecognition();
-  if (!clubResult) {
-    updateStatus("Could not confirm club. Try again or upload a video.");
-    updateStep("Ready");
-    return;
-  }
-
-  const clubLabel = clubResult.predicted_club || clubResult.category || "Unknown";
-  updateStatus(`Club confirmed: ${clubLabel}.`);
-
   updateStep("Step back");
   updateStatus("Step back so your full body is visible.");
   const bodyVisible = await attemptBodyCheck();
@@ -149,19 +192,6 @@ async function runGuidedCapture() {
   updateStep("Analyzing");
   await runAnalysis("/api/analyze-swing", { video_upload_id: state.videoUploadId });
   updateStep("Done");
-}
-
-async function attemptClubRecognition() {
-  for (let i = 0; i < 6; i++) {
-    const resp = await postFrame("/api/club-detect");
-    const result = resp.result || resp;
-    const status = result?.status || (result?.confidence >= 0.6 ? "confirmed" : "uncertain");
-    if (status === "confirmed") {
-      return result;
-    }
-    await wait(600);
-  }
-  return null;
 }
 
 async function attemptBodyCheck() {
@@ -230,7 +260,8 @@ async function runAnalysis(endpoint, payload) {
     body: JSON.stringify(payload),
   });
   if (!response.ok) {
-    throw new Error("Analysis request failed");
+    const errorPayload = await response.json().catch(() => ({}));
+    throw new Error(errorPayload.message || errorPayload.error || "Analysis request failed");
   }
   const result = await response.json();
   state.analysisId = result.analysis_id;
@@ -277,42 +308,73 @@ async function requestReport(format) {
 }
 
 function renderResults(result) {
-  const detectedClub = result?.club || result?.detected_club || "Unknown";
-  const score = Number(result?.swing_score);
+  const detectedClub = result?.club || result?.detected_club || "Not detected";
+  const scoreValue = result?.swing_score;
+  const score = scoreValue === null || scoreValue === undefined ? Number.NaN : Number(scoreValue);
   const overlayFiles = Array.isArray(result?.overlay_files) ? result.overlay_files : [];
+  const scoreLabel = result?.score_label || scoreToGrade(score, result);
+  const visualization = result?.visualization || {};
+  const overlayVideoUrl = visualization?.overlay_video_url || overlayFiles.find((item) => /\.(mp4|mov|webm)$/i.test(item)) || null;
+  const originalVideoUrl = visualization?.original_video_url || state.originalVideoUrl;
 
   analysisIdValue.textContent = result.analysis_id || "--";
   detectedClubValue.textContent = detectedClub;
   detectedClubDetail.textContent = detectedClub;
   swingScoreValue.textContent = Number.isFinite(score) ? `${Math.round(score)}` : "--";
   swingScoreDetail.textContent = Number.isFinite(score) ? `${Math.round(score)}` : "--";
-  swingGradeValue.textContent = scoreToGrade(score);
-
-  if (overlayFiles.length) {
-    const firstOverlay = overlayFiles[0];
-    overlayLink.href = `/${firstOverlay}`;
-    overlayLink.classList.remove("hidden");
-  } else {
-    overlayLink.href = "#";
-    overlayLink.classList.add("hidden");
-  }
+  swingGradeValue.textContent = scoreLabel;
 
   renderFeedbackSection(takeawayList, result?.strengths || []);
-  focusText.textContent = result?.next_focus || "Keep your tempo smooth and finish balanced.";
+  focusText.textContent = result?.next_focus || "Record from a clear side angle with your full body in frame.";
 
-  advancedMetrics.textContent = JSON.stringify(result?.advanced_metrics || {}, null, 2);
-  advancedTracking.textContent = JSON.stringify(result?.advanced_metrics?.pose || {}, null, 2);
-  advancedModels.textContent = JSON.stringify(
+  if (originalVideoUrl) {
+    state.originalVideoUrl = originalVideoUrl;
+  }
+  if (overlayVideoUrl) {
+    state.overlayVideoUrl = overlayVideoUrl.startsWith("/") ? overlayVideoUrl : `/${overlayVideoUrl}`;
+    downloadOverlayButton.href = state.overlayVideoUrl;
+    downloadOverlayButton.download = state.overlayVideoUrl.split("/").pop() || "overlay.mp4";
+  } else {
+    state.overlayVideoUrl = null;
+    downloadOverlayButton.href = "#";
+  }
+
+  if (state.overlayVideoUrl) {
+    setVisualizationMode("overlay");
+  } else {
+    setVisualizationMode("original");
+  }
+  visualizationStatus.textContent = state.overlayVideoUrl
+    ? `Pose overlay ready. Detection rate: ${formatDetectionRate(result?.tracking?.detection_rate)}`
+    : "Pose tracking could not be generated from this video.";
+
+  resultsPanel.scrollIntoView({ behavior: "smooth", block: "start" });
+
+  advancedMetrics.textContent = JSON.stringify(
     {
-      club: result?.club,
-      swing_score: result?.swing_score,
-      strengths: result?.strengths,
-      improvements: result?.improvements,
-      overlay_files: result?.overlay_files,
+      video_metadata: result?.video_metadata || {},
+      advanced_metrics: result?.advanced_metrics || {},
+      warnings: result?.warnings || [],
     },
     null,
     2,
   );
+  advancedTracking.textContent = JSON.stringify(result?.tracking || {}, null, 2);
+  advancedModels.textContent = JSON.stringify(
+    {
+      status: result?.status,
+      club: result?.club,
+      swing_score: result?.swing_score,
+      score_label: result?.score_label,
+      strengths: result?.strengths,
+      improvements: result?.improvements,
+      overlay_files: result?.overlay_files,
+      model_outputs: result?.model_outputs || {},
+    },
+    null,
+    2,
+  );
+  advancedDebug.textContent = JSON.stringify(result?.debug || {}, null, 2);
 }
 
 function renderFeedbackSection(listEl, items) {
@@ -339,11 +401,14 @@ function updateStep(step) {
   recordStep.textContent = `Step: ${step}`;
 }
 
-function scoreToGrade(score) {
+function scoreToGrade(score, result) {
   if (!Number.isFinite(score)) {
-    return "Awaiting analysis";
+    if (result?.status !== "success") {
+      return "Analysis incomplete";
+    }
+    return "Needs clearer video";
   }
-  if (score >= 90) {
+  if (score >= 85) {
     return "Excellent";
   }
   if (score >= 80) {
@@ -352,7 +417,14 @@ function scoreToGrade(score) {
   if (score >= 70) {
     return "Improving";
   }
-  return "Needs work";
+  return "Needs clearer video";
+}
+
+function formatDetectionRate(value) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) {
+    return "--";
+  }
+  return `${Number(value).toFixed(1)}%`;
 }
 
 function wait(ms) {

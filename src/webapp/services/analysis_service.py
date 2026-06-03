@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Optional
@@ -10,6 +11,9 @@ from flask import current_app
 
 from webapp.services.report_service import generate_pdf_report, generate_word_report
 from webapp.utils.storage import ensure_dir
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass
@@ -35,52 +39,130 @@ class AnalysisService:
         analysis_id = uuid4().hex
         runtime = self._runtime()
         model_manager = runtime.get("model_manager")
+        coaching_engine = runtime.get("coaching_engine")
 
-        if model_manager is not None:
-            analysis = model_manager.analyze_swing(context.video_path)
-            club = analysis.get("club", "Unknown")
-            swing_score = analysis.get("swing_score", 0)
-            strengths = analysis.get("strengths", [])
-            improvements = analysis.get("improvements", [])
-            next_focus = analysis.get("next_focus", "Keep your tempo smooth and repeat this swing")
-            advanced_metrics = analysis.get("advanced_metrics", {})
-            overlay_files = analysis.get("overlay_files", [])
-        else:
-            club = "Unknown"
-            swing_score = 0
-            strengths = ["You completed the swing"]
-            improvements = ["Collect notebook artifacts to enable richer feedback"]
-            next_focus = "Keep your tempo smooth and repeat this swing"
-            advanced_metrics = {}
-            overlay_files = []
+        if model_manager is None:
+            result = {
+                "status": "error",
+                "analysis_id": analysis_id,
+                "video_processed": False,
+                "message": "Model manager is unavailable.",
+            }
+            self._results[analysis_id] = result
+            self._persist_result(analysis_id, result)
+            return result
+
+        if coaching_engine is None:
+            result = {
+                "status": "error",
+                "analysis_id": analysis_id,
+                "video_processed": False,
+                "message": "Coaching engine is unavailable.",
+            }
+            self._results[analysis_id] = result
+            self._persist_result(analysis_id, result)
+            return result
+
+        try:
+            analysis = model_manager.analyze_swing(
+                context.video_path,
+                club_image_path=context.club_image_path,
+                manual_club_category=context.manual_club_category,
+            )
+        except ValueError as exc:
+            result = {
+                "status": "error",
+                "analysis_id": analysis_id,
+                "video_processed": False,
+                "message": str(exc),
+            }
+            self._results[analysis_id] = result
+            self._persist_result(analysis_id, result)
+            return result
+        except Exception as exc:
+            LOGGER.exception("Unexpected analysis failure for %s", context.video_path)
+            result = {
+                "status": "error",
+                "analysis_id": analysis_id,
+                "video_processed": False,
+                "message": "Unable to analyze the uploaded video. Please try a clearer clip.",
+                "debug": {"error_type": type(exc).__name__},
+            }
+            self._results[analysis_id] = result
+            self._persist_result(analysis_id, result)
+            return result
+
+        technical_metrics = analysis.get("advanced_metrics", {}) or {}
+        coaching = coaching_engine.coach(
+            technical_metrics,
+            club=analysis.get("club"),
+            video_processed=analysis.get("video_processed", False),
+            fallback_used=analysis.get("fallback_used", False),
+            club_note=analysis.get("club_note"),
+        )
+
+        swing_score = coaching.get("swing_score")
+        score_label = self._score_label(swing_score, analysis.get("video_processed", False), analysis.get("tracking", {}))
+        club_name = analysis.get("club", "Not detected") or "Not detected"
+        club_note = analysis.get("club_note") or ("Club detection needs a closer view of the club head or club end." if club_name == "Not detected" else None)
 
         summary = {
             "analysis_id": analysis_id,
-            "club": club,
+            "club": club_name,
             "swing_score": swing_score,
-            "strengths": strengths,
-            "improvements": improvements,
-            "next_focus": next_focus,
+            "next_focus": coaching.get("next_focus", "Record from a clear side angle with your full body in frame."),
         }
 
+        visualization = analysis.get("visualization", {}) or {}
+
         result = {
+            "status": "success",
             "analysis_id": analysis_id,
-            "club": club,
+            "video_processed": bool(analysis.get("video_processed", False)),
+            "club": club_name,
+            "club_note": club_note,
             "swing_score": swing_score,
-            "strengths": strengths,
-            "improvements": improvements,
-            "next_focus": next_focus,
-            "advanced_metrics": advanced_metrics,
-            "overlay_files": overlay_files,
+            "score_label": score_label,
+            "strengths": coaching.get("strengths", []) or ["Your swing was uploaded successfully."],
+            "improvements": coaching.get("improvements", []) or ["Record with your full body visible from setup through finish."],
+            "next_focus": coaching.get("next_focus", "Record from a clear side angle with your full body in frame."),
+            "advanced_metrics": technical_metrics,
+            "tracking": analysis.get("tracking", {}),
+            "model_outputs": analysis.get("model_outputs", {}),
+            "overlay_files": analysis.get("overlay_files", []),
+            "visualization": visualization,
+            "video_metadata": analysis.get("video_metadata", {}),
+            "warnings": analysis.get("warnings", []),
+            "fallback_used": bool(analysis.get("fallback_used", False)),
+            "debug": analysis.get("debug", {}),
             "summary": summary,
-            "advanced": advanced_metrics,
-            "detected_club": club,
+            "advanced": technical_metrics,
+            "detected_club": club_name,
             "input_video": context.video_path,
         }
 
         self._results[analysis_id] = result
         self._persist_result(analysis_id, result)
         return result
+
+    def _score_label(self, swing_score: Optional[int], video_processed: bool, tracking: Dict) -> str:
+        pose_detected = int(tracking.get("pose_frames_detected", 0) or 0)
+
+        if swing_score is None:
+            if not video_processed:
+                return "Analysis incomplete"
+            return "Review ready" if pose_detected > 0 else "Needs clearer video"
+
+        if pose_detected == 0:
+            return "Needs clearer video"
+
+        if swing_score >= 85:
+            return "Strong swing"
+        if swing_score >= 70:
+            return "Improving"
+        if swing_score >= 50:
+            return "Needs practice"
+        return "Needs practice"
 
     def _runtime(self) -> Dict:
         try:

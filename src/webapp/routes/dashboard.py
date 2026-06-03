@@ -17,9 +17,7 @@ def _service() -> AnalysisService:
     global analysis_service
     if analysis_service is None:
         config = current_app.config["SWINGSIGHT_CONFIG"]
-        model_manager = current_app.extensions.get("swing_model_manager")
-        coaching_engine = current_app.extensions.get("swing_coaching_engine")
-        analysis_service = AnalysisService(config, model_manager=model_manager, coaching_engine=coaching_engine)
+        analysis_service = AnalysisService(config)
     return analysis_service
 
 
@@ -76,7 +74,11 @@ def club_detect() -> Response:
 
     service = _service()
     file_id, file_path = save_filestorage(frame, service.uploads_dir, "frame")
-    result = current_app.extensions["swing_model_manager"].detect_club(file_path)
+    runtime = current_app.extensions.get("swing_runtime", {})
+    model_manager = runtime.get("model_manager")
+    if model_manager is None:
+        return jsonify({"error": "model manager is unavailable"}), 503
+    result = model_manager.detect_club(file_path)
     return jsonify({"upload_id": file_id, "file_name": Path(file_path).name, "result": result})
 
 
@@ -89,7 +91,11 @@ def body_check() -> Response:
 
     service = _service()
     file_id, file_path = save_filestorage(frame, service.uploads_dir, "frame")
-    check = current_app.extensions["swing_model_manager"].check_body_visibility(file_path)
+    runtime = current_app.extensions.get("swing_runtime", {})
+    model_manager = runtime.get("model_manager")
+    if model_manager is None:
+        return jsonify({"error": "model manager is unavailable"}), 503
+    check = model_manager.check_body_visibility(file_path)
     return jsonify({"upload_id": file_id, "file_name": Path(file_path).name, "check": check})
 
 
@@ -121,7 +127,8 @@ def analyze_swing_api() -> Response:
     result = _service().run_analysis(
         AnalysisContext(video_path=video_path, club_image_path=None, manual_club_category=club_category)
     )
-    return jsonify(result)
+    status_code = 200 if result.get("status") == "success" else 422
+    return jsonify(result), status_code
 
 
 @dashboard_bp.post("/api/analyze")
@@ -147,7 +154,8 @@ def analyze_swing() -> Response:
             manual_club_category=club_category,
         )
     )
-    return jsonify(result)
+    status_code = 200 if result.get("status") == "success" else 422
+    return jsonify(result), status_code
 
 
 @dashboard_bp.get("/api/results/<analysis_id>")
