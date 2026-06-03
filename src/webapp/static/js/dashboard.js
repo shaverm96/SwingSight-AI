@@ -27,6 +27,7 @@ const focusText = document.getElementById("focusText");
 const overlayLink = document.getElementById("overlayLink");
 const originalViewButton = document.getElementById("originalViewButton");
 const overlayViewButton = document.getElementById("overlayViewButton");
+const expandOverlayButton = document.getElementById("expandOverlayButton");
 const downloadOverlayButton = document.getElementById("downloadOverlayButton");
 const visualizationStatus = document.getElementById("visualizationStatus");
 const downloadPdfButton = document.getElementById("downloadPdfButton");
@@ -36,13 +37,25 @@ const advancedTracking = document.getElementById("advancedTracking");
 const advancedModels = document.getElementById("advancedModels");
 const advancedOverlay = document.getElementById("advancedOverlay");
 const advancedDebug = document.getElementById("advancedDebug");
+const singleVideoView = document.getElementById("singleVideoView");
+const overlayModal = document.getElementById("overlayModal");
+const overlayModalPreview = document.getElementById("overlayModalPreview");
+const modalOriginalButton = document.getElementById("modalOriginalButton");
+const modalOverlayButton = document.getElementById("modalOverlayButton");
+const closeOverlayModalButton = document.getElementById("closeOverlayModalButton");
 
 state.visualizationMode = "original";
 state.originalVideoUrl = null;
 state.overlayVideoUrl = null;
 state.overlayValidation = null;
+state.overlayVariants = {};
+state.overlayStyle = "smoothed";
+state.isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+state.modalViewMode = "original";
+state.modalOpen = false;
 
 wireVideoDebug(analysisPreview, "analysisPreview");
+wireVideoDebug(overlayModalPreview, "overlayModalPreview");
 
 uploadTrigger.addEventListener("click", () => uploadInput.click());
 
@@ -51,8 +64,11 @@ uploadInput.addEventListener("change", async () => {
   if (!file) {
     return;
   }
+  state.overlayStyle = "smoothed";
   state.originalVideoUrl = URL.createObjectURL(file);
   state.overlayVideoUrl = null;
+  state.overlayVariants = {};
+  state.overlayValidation = null;
   setVisualizationMode("original");
   resultsPanel.classList.remove("hidden");
   downloadPdfButton.disabled = true;
@@ -77,6 +93,15 @@ overlayViewButton.addEventListener("click", () => {
   }
   setVisualizationMode("overlay");
 });
+expandOverlayButton.addEventListener("click", () => openOverlayModal());
+closeOverlayModalButton.addEventListener("click", () => closeOverlayModal());
+overlayModal.addEventListener("click", (event) => {
+  if (event.target === overlayModal || event.target.classList.contains("overlay-modal__backdrop")) {
+    closeOverlayModal();
+  }
+});
+modalOriginalButton.addEventListener("click", () => setModalVideoMode("original"));
+modalOverlayButton.addEventListener("click", () => setModalVideoMode("overlay"));
 
 recordTrigger.addEventListener("click", async () => {
   recordPanel.classList.remove("hidden");
@@ -108,6 +133,9 @@ downloadDocxButton.addEventListener("click", () => requestReport("docx"));
 async function handleUploadFlow(file) {
   try {
     updateStatus("Uploading your swing...");
+    state.overlayStyle = "smoothed";
+    state.overlayVariants = {};
+    state.overlayValidation = null;
     state.videoUploadId = await uploadFile("/api/upload-video", "video", file);
     await runAnalysis("/api/analyze", { video_upload_id: state.videoUploadId });
   } catch (error) {
@@ -120,22 +148,70 @@ async function handleUploadFlow(file) {
 
 function setVisualizationMode(mode) {
   state.visualizationMode = mode;
-  const showOverlay = mode === "overlay" && Boolean(state.overlayVideoUrl);
-  const nextSource = showOverlay ? state.overlayVideoUrl : state.originalVideoUrl;
+  const nextSource = mode === "overlay" ? state.overlayVideoUrl : state.originalVideoUrl;
 
   if (nextSource) {
-    console.debug("[overlay-debug] video src assigned", { mode, nextSource });
+    analysisPreview.pause();
     analysisPreview.srcObject = null;
+    analysisPreview.removeAttribute("src");
     analysisPreview.src = nextSource;
+    analysisPreview.load();
+    analysisPreview.play().catch(() => {});
   }
 
-  originalViewButton.classList.toggle("is-active", !showOverlay);
-  overlayViewButton.classList.toggle("is-active", showOverlay);
+  originalViewButton.classList.toggle("is-active", mode === "original");
+  overlayViewButton.classList.toggle("is-active", mode === "overlay");
   overlayViewButton.disabled = !state.overlayVideoUrl;
   downloadOverlayButton.classList.toggle("hidden", !state.overlayVideoUrl);
-  visualizationStatus.textContent = showOverlay
-    ? "Pose overlay: body tracking and motion trails"
-    : "Original video preview";
+  visualizationStatus.textContent = mode === "overlay"
+    ? "Processed overlay video"
+    : "Original uploaded video";
+
+  if (state.modalOpen) {
+    setModalVideoMode(state.modalViewMode);
+  }
+}
+
+function openOverlayModal() {
+  if (!overlayModal) {
+    return;
+  }
+  state.modalOpen = true;
+  overlayModal.classList.remove("hidden");
+  overlayModal.setAttribute("aria-hidden", "false");
+  setModalVideoMode(state.visualizationMode === "overlay" ? "overlay" : "original");
+}
+
+function closeOverlayModal() {
+  if (!overlayModal) {
+    return;
+  }
+  state.modalOpen = false;
+  overlayModal.classList.add("hidden");
+  overlayModal.setAttribute("aria-hidden", "true");
+  overlayModalPreview.pause();
+  overlayModalPreview.removeAttribute("src");
+  overlayModalPreview.srcObject = null;
+}
+
+function setModalVideoMode(mode) {
+  if (!overlayModalPreview) {
+    return;
+  }
+  state.modalViewMode = mode;
+  const nextSource = mode === "overlay" ? state.overlayVideoUrl : state.originalVideoUrl;
+  if (!nextSource) {
+    return;
+  }
+  overlayModalPreview.pause();
+  overlayModalPreview.srcObject = null;
+  overlayModalPreview.removeAttribute("src");
+  overlayModalPreview.src = nextSource;
+  overlayModalPreview.load();
+  overlayModalPreview.play().catch(() => {});
+  modalOriginalButton.classList.toggle("is-active", mode === "original");
+  modalOverlayButton.classList.toggle("is-active", mode === "overlay");
+  modalOverlayButton.disabled = !state.overlayVideoUrl;
 }
 
 async function initCamera() {
@@ -188,6 +264,9 @@ async function runGuidedCapture() {
   updateStep("Uploading");
   updateStatus("Uploading your swing...");
   const uploadPayload = await uploadRecordedSwing(videoBlob);
+  state.overlayStyle = "smoothed";
+  state.overlayVariants = {};
+  state.overlayValidation = null;
   state.videoUploadId = uploadPayload.upload_id;
   analysisPreview.srcObject = null;
   analysisPreview.src = uploadPayload.preview_url || `/uploads/${uploadPayload.file_name}`;
@@ -317,10 +396,16 @@ function renderResults(result) {
   const overlayFiles = Array.isArray(result?.overlay_files) ? result.overlay_files : [];
   const scoreLabel = result?.score_label || scoreToGrade(score, result);
   const visualization = result?.visualization || {};
-  const overlayVideoUrl = visualization?.overlay_video_url || overlayFiles.find((item) => /\.(mp4|mov|webm)$/i.test(item)) || null;
+  state.overlayVariants = visualization?.overlay_variants || result?.overlay_variants || {};
+  const overlayVideoUrl = visualization?.smoothed_overlay_video_url || visualization?.overlay_video_url || overlayFiles.find((item) => /\.(mp4|mov|webm)$/i.test(item)) || null;
   const originalVideoUrl = visualization?.original_video_url || state.originalVideoUrl;
   const overlayValidation = result?.overlay_validation || result?.debug?.fallback_status?.overlay_validation || null;
   state.overlayValidation = overlayValidation;
+  const trackingStats = result?.tracking || {};
+  const qualityMetrics = trackingStats?.quality_metrics || {};
+  const trackingDebugUrl = trackingStats?.tracking_debug_video_url || state.overlayVariants?.[state.overlayStyle]?.tracking_debug_video_url || null;
+  const rawOverlayUrl = visualization?.raw_overlay_video_url || state.overlayVariants?.raw?.overlay_video_url || null;
+  const smoothedOverlayUrl = visualization?.smoothed_overlay_video_url || state.overlayVariants?.smoothed?.overlay_video_url || state.overlayVariants?.simple?.overlay_video_url || null;
 
   analysisIdValue.textContent = result.analysis_id || "--";
   detectedClubValue.textContent = detectedClub;
@@ -344,9 +429,10 @@ function renderResults(result) {
     downloadOverlayButton.href = "#";
   }
 
+  state.overlayStyle = "smoothed";
   setVisualizationMode("original");
   visualizationStatus.textContent = state.overlayVideoUrl
-    ? `Pose overlay ready. Detection rate: ${formatDetectionRate(result?.tracking?.detection_rate)}. Click Pose Overlay to view it.`
+    ? "Overlay ready. Click Overlay to view the processed swing."
     : "Pose tracking could not be generated from this video.";
 
   resultsPanel.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -370,6 +456,7 @@ function renderResults(result) {
       strengths: result?.strengths,
       improvements: result?.improvements,
       overlay_files: result?.overlay_files,
+      overlay_variants: state.overlayVariants || {},
       model_outputs: result?.model_outputs || {},
     },
     null,
@@ -377,14 +464,27 @@ function renderResults(result) {
   );
   advancedOverlay.textContent = JSON.stringify(
     {
+      overlay_style: "smoothed",
       overlay_video_url: state.overlayVideoUrl,
       overlay_validation: overlayValidation || {},
+      raw_overlay_video_url: rawOverlayUrl,
+      smoothed_overlay_video_url: smoothedOverlayUrl,
+      tracking_debug_video_url: trackingDebugUrl,
+      overlay_quality_metrics: qualityMetrics,
       overlay_files,
+      overlay_variants: state.overlayVariants || {},
     },
     null,
     2,
   );
-  advancedDebug.textContent = JSON.stringify(result?.debug || {}, null, 2);
+  advancedDebug.textContent = JSON.stringify(
+    {
+      debug: result?.debug || {},
+      tracking: result?.tracking || {},
+    },
+    null,
+    2,
+  );
 }
 
 function wireVideoDebug(videoEl, label) {
@@ -408,6 +508,13 @@ function wireVideoDebug(videoEl, label) {
     if (eventName === "error") {
       const message = describeVideoError(error);
       visualizationStatus.textContent = `Overlay video failed to load. ${message}`;
+      if (state.originalVideoUrl && videoEl === analysisPreview) {
+        analysisPreview.srcObject = null;
+        analysisPreview.src = state.originalVideoUrl;
+        if (state.isSafari) {
+          analysisPreview.load();
+        }
+      }
       console.error("[overlay-debug] video error", {
         label,
         src: videoEl.currentSrc || videoEl.src,
@@ -484,6 +591,27 @@ function formatDetectionRate(value) {
     return "--";
   }
   return `${Number(value).toFixed(1)}%`;
+}
+
+function formatPercentage(value) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) {
+    return "--";
+  }
+  return `${Number(value).toFixed(1)}%`;
+}
+
+function formatNumber(value) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) {
+    return "--";
+  }
+  return Number(value).toFixed(2);
+}
+
+function formatCount(value) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) {
+    return "--";
+  }
+  return `${Math.round(Number(value))}`;
 }
 
 function wait(ms) {

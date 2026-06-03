@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import copy
+import importlib.util
 import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, Optional
+from types import ModuleType
 
 import numpy as np
 import pandas as pd
@@ -15,7 +17,6 @@ import cv2
 from swingsight.club_recognition import recognize_club_from_frame
 from swingsight.metrics import compute_swing_metrics
 from swingsight.pose_estimation import run_pose_estimation
-from backend.services.overlay_generator import generate_pose_overlay, validate_overlay_video
 from webapp.inference.pipeline_components import check_body_visibility_from_frame
 from webapp.utils.storage import ensure_dir
 
@@ -36,6 +37,21 @@ except Exception:  # pragma: no cover - optional dependency
 
 
 LOGGER = logging.getLogger(__name__)
+
+
+def _load_overlay_generator_module() -> ModuleType:
+    module_path = Path(__file__).resolve().with_name("overlay_generator.py")
+    spec = importlib.util.spec_from_file_location("swing_sight_src_backend_overlay_generator", module_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Unable to load overlay generator from {module_path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+_overlay_generator_module = _load_overlay_generator_module()
+generate_pose_overlay = _overlay_generator_module.generate_pose_overlay
+validate_overlay_video = _overlay_generator_module.validate_overlay_video
 
 MODEL_FILE_NAMES = {
     "club_classifier": ["club_classifier.pt", "club_classifier.joblib", "club_classifier.pkl"],
@@ -594,21 +610,63 @@ class ModelManager:
         pose_frames_detected = sum(1 for frame in pose_frames if frame.get("landmarks"))
         pose_frames_processed = len(pose_frames)
 
-        overlay_result = generate_pose_overlay(
-            video_file,
-            pose_frames,
-            self.overlays_dir,
-            pose_landmarks_path=pose_landmarks_csv,
-        )
-        overlay_video_path = overlay_result.get("overlay_video_path")
-        overlay_video_url = overlay_result.get("overlay_video_url")
-        overlay_validation = overlay_result.get("overlay_validation") or validate_overlay_video(overlay_video_path, video_file) if overlay_video_path else {}
-        self.logger.info("OVERLAY VALIDATION video=%s result=%s", video_file, overlay_validation)
+        overlay_variants: Dict[str, Dict[str, Any]] = {}
+        overlay_specs = [
+            {"key": "raw", "overlay_style": "full", "tracking_mode": "raw"},
+            {"key": "smoothed", "overlay_style": "simple", "tracking_mode": "smoothed"},
+        ]
+        for spec in overlay_specs:
+            overlay_key = spec["key"]
+            overlay_style = spec["overlay_style"]
+            tracking_mode = spec["tracking_mode"]
+            overlay_name = f"{video_file.stem}_overlay_{overlay_key}.mp4"
+            overlay_result = generate_pose_overlay(
+                video_file,
+                pose_frames,
+                self.overlays_dir,
+                pose_landmarks_path=pose_landmarks_csv,
+                output_name=overlay_name,
+                overlay_style=overlay_style,
+                tracking_mode=tracking_mode,
+            )
+            overlay_video_path = overlay_result.get("overlay_video_path")
+            overlay_video_url = overlay_result.get("overlay_video_url")
+            overlay_validation = overlay_result.get("overlay_validation") or validate_overlay_video(overlay_video_path, video_file) if overlay_video_path else {}
+            overlay_variants[overlay_key] = {
+                "overlay_video_path": overlay_video_path,
+                "overlay_video_url": overlay_video_url,
+                "tracking_debug_video_path": overlay_result.get("tracking_debug_video_path"),
+                "tracking_debug_video_url": overlay_result.get("tracking_debug_video_url"),
+                "overlay_validation": overlay_validation,
+                "status": overlay_result.get("status"),
+                "message": overlay_result.get("message"),
+                "warnings": overlay_result.get("warnings", []),
+                "frames_processed": overlay_result.get("frames_processed"),
+                "frames_with_pose": overlay_result.get("frames_with_pose"),
+                "detection_rate": overlay_result.get("detection_rate"),
+                "average_confidence": overlay_result.get("average_confidence"),
+                "quality_metrics": overlay_result.get("quality_metrics", {}),
+                "debug_frame_paths": overlay_result.get("debug_frame_paths", []),
+                "overlay_style": overlay_style,
+                "tracking_mode": tracking_mode,
+            }
+            self.logger.info("OVERLAY VALIDATION video=%s variant=%s result=%s", video_file, overlay_key, overlay_validation)
+
+        overlay_variants["simple"] = overlay_variants.get("smoothed", {})
+        overlay_variants["full"] = overlay_variants.get("raw", {})
+
+        default_overlay = overlay_variants.get("smoothed", overlay_variants.get("simple", {}))
+        overlay_video_path = default_overlay.get("overlay_video_path")
+        overlay_video_url = default_overlay.get("overlay_video_url")
+        overlay_validation = default_overlay.get("overlay_validation", {})
         overlay_files = self.collect_overlay_files(video_file.stem)
-        if overlay_video_url:
-            overlay_files = sorted(dict.fromkeys([overlay_video_url, *overlay_files]))
-        elif overlay_video_path:
-            overlay_files = sorted(dict.fromkeys([self._public_output_url(overlay_video_path), *overlay_files]))
+        for variant in overlay_variants.values():
+            variant_url = variant.get("overlay_video_url")
+            variant_path = variant.get("overlay_video_path")
+            if variant_url:
+                overlay_files = sorted(dict.fromkeys([variant_url, *overlay_files]))
+            elif variant_path:
+                overlay_files = sorted(dict.fromkeys([self._public_output_url(variant_path), *overlay_files]))
 
         club_source = fallback_frames[0]["frame_path"] if fallback_frames else self._default_club_frame(str(video_file))
         club_detection = self.detect_club(club_source) if club_source else {
@@ -663,7 +721,21 @@ class ModelManager:
             "duration_seconds": validation.get("duration_seconds"),
             "detection_rate": overlay_result.get("detection_rate"),
             "average_confidence": overlay_result.get("average_confidence"),
+            "quality_metrics": overlay_result.get("quality_metrics", {}),
+            "tracking_debug_video_path": overlay_result.get("tracking_debug_video_path"),
+            "tracking_debug_video_url": overlay_result.get("tracking_debug_video_url"),
         }
+        tracking.update(
+            {
+                "head_tracked_rate": tracking["quality_metrics"].get("head_tracked_rate"),
+                "hands_tracked_rate": tracking["quality_metrics"].get("hands_tracked_rate"),
+                "feet_tracked_rate": tracking["quality_metrics"].get("feet_tracked_rate"),
+                "frames_interpolated": tracking["quality_metrics"].get("frames_interpolated"),
+                "frames_rejected": tracking["quality_metrics"].get("frames_rejected"),
+                "average_pose_quality_score": tracking["quality_metrics"].get("average_pose_quality_score"),
+                "left_right_swap_corrections": tracking["quality_metrics"].get("swap_corrections"),
+            }
+        )
 
         debug = {
             "video_metadata": validation,
@@ -674,6 +746,8 @@ class ModelManager:
                 "pose_landmarks_csv": pose_landmarks_csv,
                 "overlay_video_path": overlay_video_path,
                 "overlay_validation": overlay_validation,
+                "overlay_quality_metrics": overlay_result.get("quality_metrics", {}),
+                "tracking_debug_video_url": overlay_result.get("tracking_debug_video_url"),
             },
             "file_paths": {
                 "video_path": str(video_file),
@@ -696,11 +770,15 @@ class ModelManager:
             "model_outputs": model_outputs,
             "overlay_files": overlay_files,
             "overlay_validation": overlay_validation,
+            "overlay_variants": overlay_variants,
             "visualization": {
                 "original_video_url": self._public_upload_url(video_file),
                 "overlay_video_url": overlay_video_url,
                 "overlay_video_path": overlay_video_path,
                 "overlay_available": bool(overlay_video_url),
+                "overlay_variants": overlay_variants,
+                "raw_overlay_video_url": overlay_variants.get("raw", {}).get("overlay_video_url"),
+                "smoothed_overlay_video_url": overlay_variants.get("smoothed", {}).get("overlay_video_url"),
             },
             "fallback_used": model_outputs["fallback_used"],
             "warnings": warnings,

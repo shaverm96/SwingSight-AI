@@ -232,13 +232,29 @@ body {
 #livePreview,
 #analysisPreview {
   width: 100%;
-  min-height: 280px;
+  min-height: 320px;
   display: block;
   aspect-ratio: 16 / 9;
   object-fit: contain;
   border-radius: 14px;
   background: linear-gradient(140deg, #0b1629, #152946);
   border: 1px solid var(--line);
+}
+
+.video-stage {
+  display: grid;
+}
+
+.video-stage #analysisPreview {
+  min-height: 480px;
+}
+
+.visualization-card.is-expanded #analysisPreview {
+  min-height: 540px;
+}
+
+.visualization-card.is-expanded .video-stage #analysisPreview {
+  max-height: 68vh;
 }
 
 .record-actions {
@@ -276,6 +292,71 @@ body {
   gap: 0.6rem;
 }
 
+.tracking-card {
+  gap: 0.85rem;
+}
+
+.tracking-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.7rem;
+}
+
+.tracking-stats div {
+  display: grid;
+  gap: 0.2rem;
+  padding: 0.7rem 0.8rem;
+  border-radius: 12px;
+  background: rgba(12, 24, 42, 0.65);
+  border: 1px solid rgba(120, 150, 200, 0.18);
+}
+
+.tracking-stats span {
+  color: var(--muted);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.tracking-stats strong {
+  font-size: 1.15rem;
+  font-family: "JetBrains Mono", monospace;
+}
+
+.debug-card {
+  gap: 0.8rem;
+}
+
+.debug-copy,
+.debug-status {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.debug-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.7rem;
+}
+
+.debug-actions .button {
+  flex: 1 1 170px;
+  text-align: center;
+}
+
+.debug-actions .button.ghost {
+  flex: 1 1 190px;
+}
+
+.results-card .button {
+  text-decoration: none;
+}
+
+.visualization-card.is-expanded {
+  grid-column: 1 / -1;
+}
+
 .visualization-card {
   gap: 0.85rem;
 }
@@ -288,36 +369,6 @@ body {
   flex-wrap: wrap;
 }
 
-.toggle-group {
-  display: inline-flex;
-  gap: 0.45rem;
-  padding: 0.2rem;
-  border-radius: 999px;
-  border: 1px solid rgba(120, 150, 200, 0.18);
-  background: rgba(10, 19, 33, 0.76);
-}
-
-.button.toggle {
-  padding: 0.55rem 0.95rem;
-  font-size: 0.92rem;
-  border-radius: 999px;
-  background: transparent;
-}
-
-.button.toggle.is-active {
-  color: #06210d;
-  border-color: var(--accent-strong);
-  background: linear-gradient(140deg, var(--accent), var(--accent-strong));
-}
-
-.visualization-status {
-  margin: 0;
-  color: var(--muted);
-  font-size: 0.88rem;
-}
-
-.feedback-list {
-  list-style: none;
   padding: 0;
   margin: 0;
   display: grid;
@@ -363,7 +414,8 @@ body {
   }
 
   .option-grid,
-  .results-grid {
+  .results-grid,
+  .tracking-stats {
     grid-template-columns: 1fr;
   }
 }
@@ -403,6 +455,79 @@ body {
 .debug-card {
   display: grid;
   gap: 0.5rem;
+}
+
+.overlay-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+}
+
+.overlay-modal.hidden {
+  display: none;
+}
+
+.overlay-modal__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(4, 8, 14, 0.84);
+  backdrop-filter: blur(10px);
+}
+
+.overlay-modal__panel {
+  position: relative;
+  width: min(1180px, 96vw);
+  max-height: 92vh;
+  display: grid;
+  gap: 1rem;
+  padding: 1.2rem;
+  border-radius: 24px;
+  border: 1px solid rgba(139, 163, 200, 0.22);
+  background: rgba(8, 16, 28, 0.98);
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.55);
+}
+
+.overlay-modal__head {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: center;
+}
+
+.overlay-modal__toolbar {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.overlay-modal__video {
+  width: 100%;
+  min-height: min(72vh, 760px);
+  aspect-ratio: 16 / 9;
+  object-fit: contain;
+  border-radius: 18px;
+  background: linear-gradient(140deg, #0b1629, #152946);
+  border: 1px solid var(--line);
+}
+
+.button.toggle.is-active {
+  color: #06210d;
+  border-color: var(--accent-strong);
+  background: linear-gradient(140deg, var(--accent), var(--accent-strong));
+}
+
+@media (max-width: 760px) {
+  .overlay-modal__panel {
+    width: 100%;
+    max-height: 96vh;
+    padding: 0.9rem;
+  }
+
+  .overlay-modal__video {
+    min-height: 52vh;
+  }
 }
 
 @media (max-width: 1160px) {

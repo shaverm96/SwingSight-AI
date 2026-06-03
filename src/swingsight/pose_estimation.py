@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Protocol
@@ -10,6 +11,9 @@ try:
     from ultralytics import YOLO
 except Exception:  # pragma: no cover - optional dependency
     YOLO = None
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 COCO_KEYPOINTS = [
@@ -93,14 +97,15 @@ class YoloPoseEstimator:
     def infer(self, video_path: str) -> List[PoseFrame]:
         model = self._load_model()
         if model is None:
+            LOGGER.info("POSE backend unavailable video=%s backend=yolov8_pose loaded=false", video_path)
             return []
 
         capture = cv2.VideoCapture(str(video_path))
         if not capture.isOpened():
+            LOGGER.info("POSE backend unable to open video=%s backend=yolov8_pose", video_path)
             return []
 
         fps = float(capture.get(cv2.CAP_PROP_FPS) or 0.0)
-        frame_step = max(1, int(round(fps / 2.0))) if fps > 0 else 1
         frames: List[PoseFrame] = []
         frame_index = 0
 
@@ -109,25 +114,37 @@ class YoloPoseEstimator:
             if not success:
                 break
 
-            if frame_index % frame_step == 0:
-                timestamp_sec = frame_index / fps if fps > 0 else float(frame_index)
-                landmarks: Dict[str, Landmark] = {}
+            timestamp_sec = frame_index / fps if fps > 0 else float(frame_index)
+            landmarks: Dict[str, Landmark] = {}
+            raw_keypoints = 0
+            average_confidence = 0.0
 
-                try:
-                    results = model.predict(frame, verbose=False)
-                    result = results[0] if results else None
-                    keypoints = getattr(result, "keypoints", None)
-                    if keypoints is not None and getattr(keypoints, "xy", None) is not None:
-                        xy = keypoints.xy.cpu().numpy()
-                        conf = keypoints.conf.cpu().numpy() if getattr(keypoints, "conf", None) is not None else None
-                        if len(xy) > 0:
-                            person_xy = xy[0]
-                            person_conf = conf[0] if conf is not None and len(conf) > 0 else [1.0] * len(person_xy)
-                            landmarks = map_keypoints(person_xy, person_conf)
-                except Exception:
-                    landmarks = {}
+            try:
+                results = model.predict(frame, verbose=False)
+                result = results[0] if results else None
+                keypoints = getattr(result, "keypoints", None)
+                if keypoints is not None and getattr(keypoints, "xy", None) is not None:
+                    xy = keypoints.xy.cpu().numpy()
+                    conf = keypoints.conf.cpu().numpy() if getattr(keypoints, "conf", None) is not None else None
+                    if len(xy) > 0:
+                        person_xy = xy[0]
+                        person_conf = conf[0] if conf is not None and len(conf) > 0 else [1.0] * len(person_xy)
+                        landmarks = map_keypoints(person_xy, person_conf)
+                        raw_keypoints = len(landmarks)
+                        average_confidence = float(sum(lm.visibility for lm in landmarks.values()) / max(1, len(landmarks)))
+            except Exception as exc:
+                LOGGER.warning("POSE frame inference failed video=%s frame=%s error=%s", video_path, frame_index, exc)
+                landmarks = {}
 
-                frames.append(PoseFrame(frame_index=frame_index, timestamp_sec=timestamp_sec, landmarks=landmarks))
+            LOGGER.info(
+                "POSE FRAME video=%s backend=yolov8_pose frame=%s detected_landmarks=%s avg_confidence=%.3f",
+                video_path,
+                frame_index,
+                raw_keypoints,
+                average_confidence,
+            )
+
+            frames.append(PoseFrame(frame_index=frame_index, timestamp_sec=timestamp_sec, landmarks=landmarks))
 
             frame_index += 1
 
