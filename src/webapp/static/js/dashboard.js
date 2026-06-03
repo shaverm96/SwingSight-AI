@@ -34,6 +34,7 @@ const downloadPdfButton = document.getElementById("downloadPdfButton");
 const downloadDocxButton = document.getElementById("downloadDocxButton");
 const advancedMetrics = document.getElementById("advancedMetrics");
 const advancedTracking = document.getElementById("advancedTracking");
+const advancedHands = document.getElementById("advancedHands");
 const advancedModels = document.getElementById("advancedModels");
 const advancedOverlay = document.getElementById("advancedOverlay");
 const advancedDebug = document.getElementById("advancedDebug");
@@ -573,6 +574,20 @@ function renderResults(result) {
     2,
   );
   advancedTracking.textContent = JSON.stringify(result?.tracking || {}, null, 2);
+  advancedHands.textContent = JSON.stringify(
+    {
+      hand_tracking_rate: qualityMetrics?.hand_tracking_rate ?? qualityMetrics?.hands_tracked_rate ?? null,
+      left_hand_confidence: qualityMetrics?.left_hand_confidence ?? null,
+      right_hand_confidence: qualityMetrics?.right_hand_confidence ?? null,
+      hand_swap_corrections: qualityMetrics?.hand_swap_corrections ?? 0,
+      hand_interpolations: qualityMetrics?.hand_interpolations ?? 0,
+      hand_rejections: qualityMetrics?.hand_rejections ?? 0,
+      hand_tracking_debug_video_url: trackingStats?.hand_tracking_debug_video_url || null,
+      hand_tracking_debug_csv: trackingStats?.hand_tracking_debug_csv || null,
+    },
+    null,
+    2,
+  );
   advancedModels.textContent = JSON.stringify(
     {
       status: result?.status,

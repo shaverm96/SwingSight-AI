@@ -10,14 +10,15 @@ SRC_DIR = Path(__file__).resolve().parent.parent
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from backend.services.coaching_engine import CoachingEngine
-from backend.services.model_manager import ModelManager
 from swingsight.config import load_config
-from webapp.routes.dashboard import dashboard_bp
 
 
 def create_app() -> Flask:
     """Create a local-first Flask app for SwingSight dashboard."""
+    from backend.services.coaching_engine import CoachingEngine
+    from backend.services.model_manager import ModelManager
+    from webapp.routes.dashboard import dashboard_bp
+
     app = Flask(
         __name__,
         template_folder="templates",

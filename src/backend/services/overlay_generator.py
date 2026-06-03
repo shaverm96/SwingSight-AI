@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 from collections import defaultdict, deque
 from dataclasses import dataclass
@@ -32,6 +33,18 @@ BODY_POINTS = {
     "left_foot": "left_ankle",
     "right_foot": "right_ankle",
 }
+
+LANDMARK_INDEX_MAPPING = {
+    "left_hip": 11,
+    "right_hip": 12,
+    "left_knee": 13,
+    "right_knee": 14,
+    "left_ankle": 15,
+    "right_ankle": 16,
+}
+
+LOWER_BODY_LANDMARK_NAMES = ("left_hip", "right_hip", "left_knee", "right_knee", "left_ankle", "right_ankle")
+HAND_LANDMARK_NAMES = ("left_wrist", "right_wrist")
 
 SIMPLE_POINTS = {"head", "neck", "left_shoulder", "right_shoulder", "left_elbow", "right_elbow", "left_wrist", "right_wrist", "left_hip", "right_hip", "left_knee", "right_knee", "left_ankle", "right_ankle"}
 FULL_POINTS = set(BODY_POINTS.values()) | {"neck", "mid_hip"}
@@ -109,6 +122,7 @@ DEBUG_FRAME_REASONS = {
     "pose_missing": "pose_missing",
     "left_right_swap": "left_right_swap",
     "interpolated": "interpolated",
+    "lower_body_swap_corrected": "lower_body_swap_corrected",
 }
 
 SKELETON_CONNECTIONS = [
@@ -400,60 +414,611 @@ def _distance_score(point_a: tuple[int, int, float] | None, point_b: tuple[int, 
     return float(np.hypot(point_a[0] - point_b[0], point_a[1] - point_b[1]))
 
 
-def _lower_body_chain_cost(
+def _landmark_payload(point: tuple[int, int, float] | None) -> dict[str, float | int | None]:
+    if point is None:
+        return {"x": None, "y": None, "confidence": None}
+    return {"x": int(point[0]), "y": int(point[1]), "confidence": float(point[2])}
+
+
+def _lower_body_assignment_frame(points: Dict[str, tuple[int, int, float]], assignment: str) -> Dict[str, tuple[int, int, float]]:
+    resolved = dict(points)
+    if assignment == "B":
+        resolved["left_knee"], resolved["right_knee"] = resolved.get("right_knee"), resolved.get("left_knee")
+        resolved["left_ankle"], resolved["right_ankle"] = resolved.get("right_ankle"), resolved.get("left_ankle")
+    return resolved
+
+
+def _lower_body_reference_length(points: Dict[str, tuple[int, int, float]], width: int, height: int) -> float:
+    reference = _limb_distance(points.get("neck"), points.get("mid_hip"))
+    if reference is None:
+        reference = _limb_distance(points.get("left_hip"), points.get("right_hip"))
+    if reference is None:
+        reference = float(min(width, height)) * 0.18
+    return max(24.0, float(reference))
+
+
+def _score_lower_body_candidate(
     points: Dict[str, tuple[int, int, float]],
     previous_points: Dict[str, tuple[int, int, float]],
-    side: str,
-) -> float:
-    hip = points.get(f"{side}_hip")
-    knee = points.get(f"{side}_knee")
-    ankle = points.get(f"{side}_ankle")
-    if hip is None or knee is None or ankle is None:
-        return float("inf")
+    *,
+    width: int,
+    height: int,
+    confidence_threshold: float,
+) -> tuple[float, bool, list[str]]:
+    required = {"left_hip", "right_hip", "left_knee", "right_knee", "left_ankle", "right_ankle"}
+    missing = [name for name in required if points.get(name) is None]
+    if missing:
+        return float("inf"), False, [f"missing:{','.join(sorted(missing))}"]
 
-    cost = _distance_score(hip, knee) * 0.35 + _distance_score(knee, ankle)
-    previous_hip = previous_points.get(f"{side}_hip")
-    previous_knee = previous_points.get(f"{side}_knee")
-    previous_ankle = previous_points.get(f"{side}_ankle")
+    reference = _lower_body_reference_length(points, width, height)
+    score = 0.0
+    reasons: list[str] = []
+    valid = True
+    vertical_margin = max(4.0, reference * 0.08)
+    side_margin = max(6.0, reference * 0.12)
+    teleport_limit = max(60.0, float(min(width, height)) * 0.22)
 
-    if previous_hip is not None:
-        cost += _distance_score(hip, previous_hip) * 0.25
-    if previous_knee is not None:
-        cost += _distance_score(knee, previous_knee) * 0.5
-    if previous_ankle is not None:
-        cost += _distance_score(ankle, previous_ankle) * 0.5
-    return cost
+    for side in ("left", "right"):
+        opposite_side = "right" if side == "left" else "left"
+        hip = points.get(f"{side}_hip")
+        knee = points.get(f"{side}_knee")
+        ankle = points.get(f"{side}_ankle")
+        opposite_hip = points.get(f"{opposite_side}_hip")
+        opposite_knee = points.get(f"{opposite_side}_knee")
+        opposite_ankle = points.get(f"{opposite_side}_ankle")
+        previous_hip = previous_points.get(f"{side}_hip")
+        previous_knee = previous_points.get(f"{side}_knee")
+        previous_ankle = previous_points.get(f"{side}_ankle")
+
+        if hip is None or knee is None or ankle is None:
+            return float("inf"), False, [f"missing_side:{side}"]
+
+        hip_to_knee = _distance_score(hip, knee)
+        knee_to_ankle = _distance_score(knee, ankle)
+        same_hip_distance = hip_to_knee
+        opposite_hip_distance = _distance_score(opposite_hip, knee)
+        same_ankle_distance = knee_to_ankle
+        opposite_ankle_distance = _distance_score(opposite_knee, ankle)
+
+        if knee[1] <= hip[1] - vertical_margin:
+            valid = False
+            score += reference * 3.0
+            reasons.append(f"{side}_knee_above_hip")
+        if ankle[1] <= knee[1] - vertical_margin:
+            valid = False
+            score += reference * 3.0
+            reasons.append(f"{side}_ankle_above_knee")
+
+        if hip_to_knee > reference * 1.9 or knee_to_ankle > reference * 2.2:
+            valid = False
+            score += (hip_to_knee + knee_to_ankle) * 0.5
+            reasons.append(f"{side}_limb_length_out_of_range")
+
+        if same_hip_distance > opposite_hip_distance + side_margin:
+            score += (same_hip_distance - opposite_hip_distance) * 2.0
+            reasons.append(f"{side}_knee_closer_to_opposite_hip")
+
+        if same_ankle_distance > opposite_ankle_distance + side_margin:
+            score += (same_ankle_distance - opposite_ankle_distance) * 2.0
+            reasons.append(f"{side}_foot_closer_to_opposite_knee")
+
+        if previous_knee is not None and _distance_score(knee, previous_knee) > teleport_limit:
+            score += _distance_score(knee, previous_knee) * 1.5
+            reasons.append(f"{side}_knee_teleport")
+        if previous_ankle is not None and _distance_score(ankle, previous_ankle) > teleport_limit:
+            score += _distance_score(ankle, previous_ankle) * 1.5
+            reasons.append(f"{side}_foot_teleport")
+        if previous_hip is not None and _distance_score(hip, previous_hip) > teleport_limit:
+            score += _distance_score(hip, previous_hip) * 0.5
+            reasons.append(f"{side}_hip_jump")
+
+        if hip[2] < confidence_threshold or knee[2] < confidence_threshold or ankle[2] < confidence_threshold:
+            score += (confidence_threshold - min(hip[2], knee[2], ankle[2])) * reference * 2.0
+            reasons.append(f"{side}_low_confidence")
+
+    if _distance_score(points.get("left_ankle"), points.get("right_ankle")) < reference * 0.08:
+        score += reference * 0.8
+        reasons.append("feet_overlap")
+
+    return score, valid, reasons
+
+
+def _build_lower_body_frame_log(
+    *,
+    frame_index: int,
+    raw_points: Dict[str, tuple[int, int, float]],
+    corrected_points: Dict[str, tuple[int, int, float]],
+    selected_assignment: str,
+    same_score: float,
+    swapped_score: float,
+    swap_corrected: bool,
+    rejected: bool,
+    used_previous: bool,
+    source_reason: str,
+    correction_reason: str,
+) -> Dict[str, Any]:
+    return {
+        "frame_number": frame_index,
+        "selected_assignment": selected_assignment,
+        "same_assignment_score": round(float(same_score), 3) if np.isfinite(same_score) else None,
+        "swapped_assignment_score": round(float(swapped_score), 3) if np.isfinite(swapped_score) else None,
+        "lower_body_swap_detected": bool(np.isfinite(same_score) and np.isfinite(swapped_score) and swapped_score + 1e-6 < same_score),
+        "lower_body_swap_corrected": bool(swap_corrected),
+        "lower_body_rejected": bool(rejected),
+        "lower_body_used_previous": bool(used_previous),
+        "source_reason": source_reason,
+        "correction_reason": correction_reason,
+        "raw_left_hip_x": _landmark_payload(raw_points.get("left_hip")).get("x"),
+        "raw_left_hip_y": _landmark_payload(raw_points.get("left_hip")).get("y"),
+        "raw_left_knee_x": _landmark_payload(raw_points.get("left_knee")).get("x"),
+        "raw_left_knee_y": _landmark_payload(raw_points.get("left_knee")).get("y"),
+        "raw_left_ankle_x": _landmark_payload(raw_points.get("left_ankle")).get("x"),
+        "raw_left_ankle_y": _landmark_payload(raw_points.get("left_ankle")).get("y"),
+        "raw_right_hip_x": _landmark_payload(raw_points.get("right_hip")).get("x"),
+        "raw_right_hip_y": _landmark_payload(raw_points.get("right_hip")).get("y"),
+        "raw_right_knee_x": _landmark_payload(raw_points.get("right_knee")).get("x"),
+        "raw_right_knee_y": _landmark_payload(raw_points.get("right_knee")).get("y"),
+        "raw_right_ankle_x": _landmark_payload(raw_points.get("right_ankle")).get("x"),
+        "raw_right_ankle_y": _landmark_payload(raw_points.get("right_ankle")).get("y"),
+        "corrected_left_hip_x": _landmark_payload(corrected_points.get("left_hip")).get("x"),
+        "corrected_left_hip_y": _landmark_payload(corrected_points.get("left_hip")).get("y"),
+        "corrected_left_knee_x": _landmark_payload(corrected_points.get("left_knee")).get("x"),
+        "corrected_left_knee_y": _landmark_payload(corrected_points.get("left_knee")).get("y"),
+        "corrected_left_ankle_x": _landmark_payload(corrected_points.get("left_ankle")).get("x"),
+        "corrected_left_ankle_y": _landmark_payload(corrected_points.get("left_ankle")).get("y"),
+        "corrected_right_hip_x": _landmark_payload(corrected_points.get("right_hip")).get("x"),
+        "corrected_right_hip_y": _landmark_payload(corrected_points.get("right_hip")).get("y"),
+        "corrected_right_knee_x": _landmark_payload(corrected_points.get("right_knee")).get("x"),
+        "corrected_right_knee_y": _landmark_payload(corrected_points.get("right_knee")).get("y"),
+        "corrected_right_ankle_x": _landmark_payload(corrected_points.get("right_ankle")).get("x"),
+        "corrected_right_ankle_y": _landmark_payload(corrected_points.get("right_ankle")).get("y"),
+    }
+
+
+def _draw_lower_body_debug_overlay(
+    frame: np.ndarray,
+    points: Dict[str, tuple[int, int, float]],
+    debug_record: Dict[str, Any],
+) -> np.ndarray:
+    debug_frame = frame.copy()
+    colors = {
+        "left": (90, 220, 120),
+        "right": (255, 170, 70),
+    }
+    label_color = (255, 255, 255)
+    for side in ("left", "right"):
+        hip = points.get(f"{side}_hip")
+        knee = points.get(f"{side}_knee")
+        ankle = points.get(f"{side}_ankle")
+        if hip is None or knee is None or ankle is None:
+            continue
+        color = colors[side]
+        cv2.line(debug_frame, hip[:2], knee[:2], color, 4, cv2.LINE_AA)
+        cv2.line(debug_frame, knee[:2], ankle[:2], color, 4, cv2.LINE_AA)
+        for label, point in ((f"{side[0].upper()}_HIP", hip), (f"{side[0].upper()}_KNEE", knee), (f"{side[0].upper()}_FOOT", ankle)):
+            cv2.circle(debug_frame, point[:2], 7, color, -1, cv2.LINE_AA)
+            cv2.circle(debug_frame, point[:2], 9, (255, 255, 255), 1, cv2.LINE_AA)
+            cv2.putText(
+                debug_frame,
+                label,
+                (point[0] + 8, max(18, point[1] - 8)),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.45,
+                label_color,
+                1,
+                cv2.LINE_AA,
+            )
+
+    banner = []
+    if debug_record.get("lower_body_swap_corrected"):
+        banner.append("swap corrected")
+    if debug_record.get("lower_body_rejected"):
+        banner.append("rejected")
+    if debug_record.get("lower_body_used_previous"):
+        banner.append("used previous")
+    if banner:
+        cv2.rectangle(debug_frame, (14, 14), (340, 54), (12, 18, 28), -1, cv2.LINE_AA)
+        cv2.rectangle(debug_frame, (14, 14), (340, 54), (255, 255, 255), 1, cv2.LINE_AA)
+        cv2.putText(
+            debug_frame,
+            " | ".join(banner),
+            (24, 41),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.5,
+            (255, 255, 255),
+            1,
+            cv2.LINE_AA,
+        )
+
+    return debug_frame
+
+
+def _hand_reference_length(points: Dict[str, tuple[int, int, float]], width: int, height: int) -> float:
+    reference = _limb_distance(points.get("left_shoulder"), points.get("right_shoulder"))
+    if reference is None:
+        reference = _limb_distance(points.get("neck"), points.get("mid_hip"))
+    if reference is None:
+        reference = float(min(width, height)) * 0.14
+    return max(24.0, float(reference))
+
+
+def _score_hand_candidate(
+    points: Dict[str, tuple[int, int, float]],
+    previous_points: Dict[str, tuple[int, int, float]],
+    *,
+    width: int,
+    height: int,
+    confidence_threshold: float,
+) -> tuple[float, bool, list[str]]:
+    required = {"left_shoulder", "right_shoulder", "left_elbow", "right_elbow", "left_wrist", "right_wrist"}
+    missing = [name for name in required if points.get(name) is None]
+    if missing:
+        return float("inf"), False, [f"missing:{','.join(sorted(missing))}"]
+
+    reference = _hand_reference_length(points, width, height)
+    score = 0.0
+    reasons: list[str] = []
+    valid = True
+    side_margin = max(6.0, reference * 0.12)
+    teleport_limit = max(55.0, float(min(width, height)) * 0.18)
+
+    for side in ("left", "right"):
+        opposite_side = "right" if side == "left" else "left"
+        shoulder = points.get(f"{side}_shoulder")
+        elbow = points.get(f"{side}_elbow")
+        wrist = points.get(f"{side}_wrist")
+        opposite_elbow = points.get(f"{opposite_side}_elbow")
+        previous_shoulder = previous_points.get(f"{side}_shoulder")
+        previous_elbow = previous_points.get(f"{side}_elbow")
+        previous_wrist = previous_points.get(f"{side}_wrist")
+
+        if shoulder is None or elbow is None or wrist is None:
+            return float("inf"), False, [f"missing_side:{side}"]
+
+        upper_arm = _distance_score(shoulder, elbow)
+        forearm = _distance_score(elbow, wrist)
+        arm_total = upper_arm + forearm
+
+        if arm_total < reference * 0.35 or arm_total > reference * 2.6:
+            valid = False
+            score += reference * 3.0
+            reasons.append(f"{side}_arm_length_out_of_range")
+
+        if _distance_score(wrist, elbow) > reference * 1.9:
+            valid = False
+            score += reference * 2.0
+            reasons.append(f"{side}_wrist_far_from_elbow")
+
+        wrist_jump = previous_wrist is not None and _distance_score(wrist, previous_wrist) > teleport_limit
+        arm_geometry_reasonable = reference * 0.45 <= arm_total <= reference * 2.1 and _distance_score(wrist, elbow) <= reference * 1.5
+
+        if _distance_score(wrist, opposite_elbow) + side_margin < _distance_score(wrist, elbow):
+            score += reference * 0.9
+            reasons.append(f"{side}_wrist_closer_to_opposite_elbow")
+
+        if wrist_jump:
+            score += _distance_score(wrist, previous_wrist) * 1.6
+            reasons.append(f"{side}_wrist_teleport")
+        if previous_elbow is not None and _distance_score(elbow, previous_elbow) > teleport_limit:
+            score += _distance_score(elbow, previous_elbow) * 0.8
+            reasons.append(f"{side}_elbow_jump")
+        if previous_shoulder is not None and _distance_score(shoulder, previous_shoulder) > teleport_limit:
+            score += _distance_score(shoulder, previous_shoulder) * 0.3
+            reasons.append(f"{side}_shoulder_jump")
+
+        if wrist[2] < confidence_threshold:
+            score += (confidence_threshold - wrist[2]) * reference * 1.5
+            reasons.append(f"{side}_wrist_low_confidence")
+
+    return score, valid, reasons
+
+
+def _build_hand_frame_log(
+    *,
+    frame_index: int,
+    raw_points: Dict[str, tuple[int, int, float]],
+    corrected_points: Dict[str, tuple[int, int, float]],
+    selected_assignment: str,
+    same_score: float,
+    swapped_score: float,
+    swap_corrected: bool,
+    rejected: bool,
+    used_previous: bool,
+    source_reason: str,
+    correction_reason: str,
+) -> Dict[str, Any]:
+    return {
+        "frame_number": frame_index,
+        "selected_assignment": selected_assignment,
+        "same_assignment_score": round(float(same_score), 3) if np.isfinite(same_score) else None,
+        "swapped_assignment_score": round(float(swapped_score), 3) if np.isfinite(swapped_score) else None,
+        "hand_swap_detected": bool(np.isfinite(same_score) and np.isfinite(swapped_score) and swapped_score + 1e-6 < same_score),
+        "hand_swap_corrected": bool(swap_corrected),
+        "hand_rejected": bool(rejected),
+        "hand_used_previous": bool(used_previous),
+        "source_reason": source_reason,
+        "correction_reason": correction_reason,
+        "raw_left_wrist_x": _landmark_payload(raw_points.get("left_wrist")).get("x"),
+        "raw_left_wrist_y": _landmark_payload(raw_points.get("left_wrist")).get("y"),
+        "raw_right_wrist_x": _landmark_payload(raw_points.get("right_wrist")).get("x"),
+        "raw_right_wrist_y": _landmark_payload(raw_points.get("right_wrist")).get("y"),
+        "raw_left_elbow_x": _landmark_payload(raw_points.get("left_elbow")).get("x"),
+        "raw_left_elbow_y": _landmark_payload(raw_points.get("left_elbow")).get("y"),
+        "raw_right_elbow_x": _landmark_payload(raw_points.get("right_elbow")).get("x"),
+        "raw_right_elbow_y": _landmark_payload(raw_points.get("right_elbow")).get("y"),
+        "corrected_left_wrist_x": _landmark_payload(corrected_points.get("left_wrist")).get("x"),
+        "corrected_left_wrist_y": _landmark_payload(corrected_points.get("left_wrist")).get("y"),
+        "corrected_right_wrist_x": _landmark_payload(corrected_points.get("right_wrist")).get("x"),
+        "corrected_right_wrist_y": _landmark_payload(corrected_points.get("right_wrist")).get("y"),
+        "corrected_left_elbow_x": _landmark_payload(corrected_points.get("left_elbow")).get("x"),
+        "corrected_left_elbow_y": _landmark_payload(corrected_points.get("left_elbow")).get("y"),
+        "corrected_right_elbow_x": _landmark_payload(corrected_points.get("right_elbow")).get("x"),
+        "corrected_right_elbow_y": _landmark_payload(corrected_points.get("right_elbow")).get("y"),
+    }
+
+
+def _draw_hand_debug_overlay(
+    frame: np.ndarray,
+    points: Dict[str, tuple[int, int, float]],
+    debug_record: Dict[str, Any],
+) -> np.ndarray:
+    debug_frame = frame.copy()
+    colors = {
+        "left": (120, 220, 255),
+        "right": (255, 160, 120),
+    }
+    for side in ("left", "right"):
+        shoulder = points.get(f"{side}_shoulder")
+        elbow = points.get(f"{side}_elbow")
+        wrist = points.get(f"{side}_wrist")
+        if shoulder is None or elbow is None or wrist is None:
+            continue
+        color = colors[side]
+        cv2.line(debug_frame, shoulder[:2], elbow[:2], color, 4, cv2.LINE_AA)
+        cv2.line(debug_frame, elbow[:2], wrist[:2], color, 4, cv2.LINE_AA)
+        for label, point in ((f"{side[0].upper()}_SHOULDER", shoulder), (f"{side[0].upper()}_ELBOW", elbow), (f"{side[0].upper()}_WRIST", wrist)):
+            cv2.circle(debug_frame, point[:2], 7, color, -1, cv2.LINE_AA)
+            cv2.circle(debug_frame, point[:2], 9, (255, 255, 255), 1, cv2.LINE_AA)
+            cv2.putText(debug_frame, label, (point[0] + 8, max(18, point[1] - 8)), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1, cv2.LINE_AA)
+
+    banner = []
+    if debug_record.get("hand_swap_corrected"):
+        banner.append("swap corrected")
+    if debug_record.get("hand_rejected"):
+        banner.append("rejected")
+    if debug_record.get("hand_used_previous"):
+        banner.append("used previous")
+    if banner:
+        cv2.rectangle(debug_frame, (14, 14), (340, 54), (12, 18, 28), -1, cv2.LINE_AA)
+        cv2.rectangle(debug_frame, (14, 14), (340, 54), (255, 255, 255), 1, cv2.LINE_AA)
+        cv2.putText(debug_frame, " | ".join(banner), (24, 41), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
+    return debug_frame
+
+
+def _resolve_hand_assignment(
+    frame_points: Dict[str, tuple[int, int, float]],
+    previous_points: Dict[str, tuple[int, int, float]],
+    *,
+    width: int,
+    height: int,
+    confidence_threshold: float,
+) -> tuple[Dict[str, tuple[int, int, float]], Dict[str, Any]]:
+    resolved = dict(frame_points)
+    hand_swap_corrections = 0
+    hand_rejections = 0
+    hand_interpolations = 0
+
+    same_candidate = dict(resolved)
+    swapped_candidate = dict(resolved)
+    swapped_candidate["left_wrist"], swapped_candidate["right_wrist"] = swapped_candidate.get("right_wrist"), swapped_candidate.get("left_wrist")
+
+    same_score, same_valid, same_reasons = _score_hand_candidate(
+        same_candidate,
+        previous_points,
+        width=width,
+        height=height,
+        confidence_threshold=confidence_threshold,
+    )
+    swapped_score, swapped_valid, swapped_reasons = _score_hand_candidate(
+        swapped_candidate,
+        previous_points,
+        width=width,
+        height=height,
+        confidence_threshold=confidence_threshold,
+    )
+
+    selected_assignment = "A"
+    selected_candidate = same_candidate
+    selected_reasons = same_reasons
+    swap_corrected = False
+    used_previous = False
+    rejected = False
+    correction_reason = "same_assignment_selected"
+    hand_reference = _hand_reference_length(selected_candidate, width, height)
+    left_used_previous = False
+    right_used_previous = False
+    left_rejected = False
+    right_rejected = False
+
+    if swapped_valid and (not same_valid or swapped_score + 1e-6 < same_score):
+        selected_assignment = "B"
+        selected_candidate = swapped_candidate
+        selected_reasons = swapped_reasons
+        swap_corrected = True
+        hand_swap_corrections += 1
+        correction_reason = "swapped_assignment_better"
+
+    for side in ("left", "right"):
+        wrist_name = f"{side}_wrist"
+        elbow_name = f"{side}_elbow"
+        shoulder_name = f"{side}_shoulder"
+        wrist_point = selected_candidate.get(wrist_name)
+        elbow_point = selected_candidate.get(elbow_name)
+        shoulder_point = selected_candidate.get(shoulder_name)
+        previous_wrist = previous_points.get(wrist_name)
+
+        if wrist_point is None or wrist_point[2] < confidence_threshold or elbow_point is None or shoulder_point is None:
+            if previous_wrist is not None and previous_wrist[2] >= max(0.2, confidence_threshold * 0.75):
+                selected_candidate[wrist_name] = previous_wrist
+                used_previous = True
+                hand_interpolations += 1
+                selected_reasons.append(f"{side}_wrist_previous_frame")
+                if side == "left":
+                    left_used_previous = True
+                else:
+                    right_used_previous = True
+            else:
+                selected_candidate.pop(wrist_name, None)
+                rejected = True
+                hand_rejections += 1
+                if side == "left":
+                    left_rejected = True
+                else:
+                    right_rejected = True
+        else:
+            jump_threshold = max(50.0, min(width, height) * 0.16)
+            wrist_jump = previous_wrist is not None and detect_unrealistic_jump(previous_wrist, wrist_point, threshold_px=jump_threshold)
+            arm_total = _distance_score(shoulder_point, elbow_point) + _distance_score(elbow_point, wrist_point)
+            arm_geometry_reasonable = hand_reference * 0.45 <= arm_total <= hand_reference * 2.1 and _distance_score(wrist_point, elbow_point) <= hand_reference * 1.5
+
+            if wrist_jump and not arm_geometry_reasonable:
+                if previous_wrist is not None and previous_wrist[2] >= max(0.2, confidence_threshold * 0.75):
+                    selected_candidate[wrist_name] = previous_wrist
+                    used_previous = True
+                    hand_interpolations += 1
+                    selected_reasons.append(f"{side}_wrist_previous_frame")
+                    if side == "left":
+                        left_used_previous = True
+                    else:
+                        right_used_previous = True
+                else:
+                    selected_candidate.pop(wrist_name, None)
+                    rejected = True
+                    hand_rejections += 1
+                    if side == "left":
+                        left_rejected = True
+                    else:
+                        right_rejected = True
+            elif wrist_jump:
+                selected_reasons.append(f"{side}_wrist_jump_kept")
+                if wrist_point[2] < confidence_threshold:
+                    selected_candidate.pop(wrist_name, None)
+                    rejected = True
+                    hand_rejections += 1
+                    if side == "left":
+                        left_rejected = True
+                    else:
+                        right_rejected = True
+            elif previous_wrist is not None and wrist_point[2] < confidence_threshold * 0.85:
+                selected_candidate[wrist_name] = previous_wrist
+                used_previous = True
+                hand_interpolations += 1
+                selected_reasons.append(f"{side}_wrist_previous_frame")
+                if side == "left":
+                    left_used_previous = True
+                else:
+                    right_used_previous = True
+
+    if not selected_reasons:
+        selected_reasons = ["hand_ok"]
+
+    resolved.update({name: point for name, point in selected_candidate.items() if name in HAND_LANDMARK_NAMES and point is not None})
+    debug_record = {
+        "selected_assignment": selected_assignment,
+        "same_assignment_score": same_score,
+        "swapped_assignment_score": swapped_score,
+        "same_assignment_valid": same_valid,
+        "swapped_assignment_valid": swapped_valid,
+        "hand_swap_corrected": swap_corrected,
+        "hand_rejected": rejected,
+        "hand_used_previous": used_previous,
+        "left_wrist_used_previous": left_used_previous,
+        "right_wrist_used_previous": right_used_previous,
+        "left_wrist_rejected": left_rejected,
+        "right_wrist_rejected": right_rejected,
+        "hand_reason": ";".join(dict.fromkeys(selected_reasons)),
+        "hand_correction_reason": correction_reason,
+        "hand_swap_detected": bool(swapped_valid and (not same_valid or swapped_score + 1e-6 < same_score)),
+    }
+    return resolved, {
+        "hand_swap_corrections": hand_swap_corrections,
+        "hand_rejections": hand_rejections,
+        "hand_interpolations": hand_interpolations,
+        "debug_record": debug_record,
+    }
 
 
 def _resolve_lower_body_assignment(
     frame_points: Dict[str, tuple[int, int, float]],
     previous_points: Dict[str, tuple[int, int, float]],
     *,
+    width: int,
+    height: int,
     confidence_threshold: float,
-) -> tuple[Dict[str, tuple[int, int, float]], int, int, int, int]:
+) -> tuple[Dict[str, tuple[int, int, float]], Dict[str, Any]]:
     resolved = dict(frame_points)
     knee_swap_corrections = 0
     foot_swap_corrections = 0
     lower_body_rejections = 0
     lower_body_interpolations = 0
+    same_candidate = _lower_body_assignment_frame(resolved, "A")
+    swapped_candidate = _lower_body_assignment_frame(resolved, "B")
 
-    left_confident = resolved.get("left_knee") is not None and resolved["left_knee"][2] >= confidence_threshold and resolved.get("left_ankle") is not None and resolved["left_ankle"][2] >= confidence_threshold
-    right_confident = resolved.get("right_knee") is not None and resolved["right_knee"][2] >= confidence_threshold and resolved.get("right_ankle") is not None and resolved["right_ankle"][2] >= confidence_threshold
+    same_score, same_valid, same_reasons = _score_lower_body_candidate(
+        same_candidate,
+        previous_points,
+        width=width,
+        height=height,
+        confidence_threshold=confidence_threshold,
+    )
+    swapped_score, swapped_valid, swapped_reasons = _score_lower_body_candidate(
+        swapped_candidate,
+        previous_points,
+        width=width,
+        height=height,
+        confidence_threshold=confidence_threshold,
+    )
 
-    if left_confident and right_confident:
-        same_cost = _lower_body_chain_cost(resolved, previous_points, "left") + _lower_body_chain_cost(resolved, previous_points, "right")
-        swapped = dict(resolved)
-        swapped["left_knee"], swapped["right_knee"] = swapped["right_knee"], swapped["left_knee"]
-        swapped["left_ankle"], swapped["right_ankle"] = swapped["right_ankle"], swapped["left_ankle"]
-        swapped_cost = _lower_body_chain_cost(swapped, previous_points, "left") + _lower_body_chain_cost(swapped, previous_points, "right")
-        if swapped_cost + 12.0 < same_cost:
-            knee_swap_corrections += 1
-            foot_swap_corrections += 1
-            resolved = swapped
-        elif same_cost == float("inf"):
-            lower_body_rejections += 1
-    else:
+    selected_assignment = "A"
+    selected_candidate = same_candidate
+    selected_reasons = same_reasons
+    swap_corrected = False
+    used_previous = False
+    rejected = False
+    correction_reason = "same_assignment_selected"
+
+    if swapped_valid and (not same_valid or swapped_score + 1e-6 < same_score):
+        selected_assignment = "B"
+        selected_candidate = swapped_candidate
+        selected_reasons = swapped_reasons
+        swap_corrected = True
+        knee_swap_corrections += 1
+        foot_swap_corrections += 1
+        correction_reason = "swapped_assignment_better"
+    elif not same_valid and swapped_valid:
+        selected_assignment = "B"
+        selected_candidate = swapped_candidate
+        selected_reasons = swapped_reasons
+        swap_corrected = True
+        knee_swap_corrections += 1
+        foot_swap_corrections += 1
+        correction_reason = "same_assignment_invalid_swapped_valid"
+
+    if not selected_reasons:
+        selected_reasons = ["lower_body_ok"]
+
+    critical_failure = (
+        not same_valid
+        and not swapped_valid
+        or selected_candidate.get("left_knee") is None
+        or selected_candidate.get("right_knee") is None
+        or selected_candidate.get("left_ankle") is None
+        or selected_candidate.get("right_ankle") is None
+    )
+    if critical_failure:
         lower_body_rejections += 1
+        rejected = True
+    resolved.update({name: point for name, point in selected_candidate.items() if name in LOWER_BODY_LANDMARK_NAMES and point is not None})
 
     for side in ("left", "right"):
         knee_name = f"{side}_knee"
@@ -463,21 +1028,62 @@ def _resolve_lower_body_assignment(
         previous_knee = previous_points.get(knee_name)
         previous_ankle = previous_points.get(ankle_name)
 
-        if knee_point is not None and previous_knee is not None and detect_unrealistic_jump(previous_knee, knee_point, threshold_px=confidence_threshold * 240.0):
-            resolved.pop(knee_name, None)
-            lower_body_rejections += 1
-            if previous_knee[2] >= confidence_threshold:
+        if knee_point is None or knee_point[2] < confidence_threshold or (previous_knee is not None and detect_unrealistic_jump(previous_knee, knee_point, threshold_px=max(60.0, min(width, height) * 0.18))):
+            if previous_knee is not None and previous_knee[2] >= max(0.2, confidence_threshold * 0.75):
                 resolved[knee_name] = previous_knee
                 lower_body_interpolations += 1
+                used_previous = True
+                selected_reasons.append(f"{side}_knee_previous_frame")
+            else:
+                resolved.pop(knee_name, None)
+                lower_body_rejections += 1
+                rejected = True
 
-        if ankle_point is not None and previous_ankle is not None and detect_unrealistic_jump(previous_ankle, ankle_point, threshold_px=confidence_threshold * 260.0):
-            resolved.pop(ankle_name, None)
-            lower_body_rejections += 1
-            if previous_ankle[2] >= confidence_threshold:
+        if ankle_point is None or ankle_point[2] < confidence_threshold or (previous_ankle is not None and detect_unrealistic_jump(previous_ankle, ankle_point, threshold_px=max(60.0, min(width, height) * 0.20))):
+            if previous_ankle is not None and previous_ankle[2] >= max(0.2, confidence_threshold * 0.75):
                 resolved[ankle_name] = previous_ankle
                 lower_body_interpolations += 1
+                used_previous = True
+                selected_reasons.append(f"{side}_foot_previous_frame")
+            else:
+                resolved.pop(ankle_name, None)
+                lower_body_rejections += 1
+                rejected = True
 
-    return resolved, knee_swap_corrections, foot_swap_corrections, lower_body_rejections, lower_body_interpolations
+        if knee_name in resolved and ankle_name in resolved:
+            if resolved[knee_name][1] >= resolved[ankle_name][1] - max(10.0, min(width, height) * 0.03):
+                if previous_knee is not None and previous_knee[2] >= max(0.2, confidence_threshold * 0.75):
+                    resolved[knee_name] = previous_knee
+                    lower_body_interpolations += 1
+                    used_previous = True
+                    selected_reasons.append(f"{side}_knee_finish_hold")
+                if previous_ankle is not None and previous_ankle[2] >= max(0.2, confidence_threshold * 0.75):
+                    resolved[ankle_name] = previous_ankle
+                    lower_body_interpolations += 1
+                    used_previous = True
+                    selected_reasons.append(f"{side}_foot_finish_hold")
+
+    debug_record = {
+        "selected_assignment": selected_assignment,
+        "same_assignment_score": same_score,
+        "swapped_assignment_score": swapped_score,
+        "same_assignment_valid": same_valid,
+        "swapped_assignment_valid": swapped_valid,
+        "lower_body_swap_corrected": swap_corrected,
+        "lower_body_rejected": rejected,
+        "lower_body_used_previous": used_previous,
+        "lower_body_reason": ";".join(dict.fromkeys(selected_reasons)),
+        "lower_body_correction_reason": correction_reason,
+        "lower_body_swap_detected": bool(swapped_valid and (not same_valid or swapped_score + 1e-6 < same_score)),
+    }
+
+    return resolved, {
+        "knee_swap_corrections": knee_swap_corrections,
+        "foot_swap_corrections": foot_swap_corrections,
+        "lower_body_rejections": lower_body_rejections,
+        "lower_body_interpolations": lower_body_interpolations,
+        "debug_record": debug_record,
+    }
 
 
 def validate_landmark(
@@ -592,26 +1198,6 @@ def correct_ankle_tracking(
             corrected[ankle_name] = prev_ankle
             continue
 
-    left_ankle = corrected.get("left_ankle")
-    right_ankle = corrected.get("right_ankle")
-    left_knee = knee_points.get("left_knee")
-    right_knee = knee_points.get("right_knee")
-
-    if left_ankle is not None and right_ankle is not None:
-        same_knee_distance = _distance_score(left_ankle, left_knee) + _distance_score(right_ankle, right_knee)
-        swapped_knee_distance = _distance_score(left_ankle, right_knee) + _distance_score(right_ankle, left_knee)
-        same_prev_distance = _distance_score(left_ankle, previous_points.get("left_ankle")) + _distance_score(right_ankle, previous_points.get("right_ankle"))
-        swapped_prev_distance = _distance_score(left_ankle, previous_points.get("right_ankle")) + _distance_score(right_ankle, previous_points.get("left_ankle"))
-        if swapped_knee_distance + 10.0 < same_knee_distance or swapped_prev_distance + 10.0 < same_prev_distance:
-            swap_corrections += 1
-            corrected["left_ankle"], corrected["right_ankle"] = corrected["right_ankle"], corrected["left_ankle"]
-            left_ankle = corrected.get("left_ankle")
-            right_ankle = corrected.get("right_ankle")
-
-    if detect_left_right_swap(left_ankle, right_ankle):
-        swap_corrections += 1
-        corrected["left_ankle"], corrected["right_ankle"] = corrected["right_ankle"], corrected["left_ankle"]
-
     return corrected, ankle_corrections, swap_corrections
 
 
@@ -654,9 +1240,9 @@ def _build_dense_pose_series(
     style: str,
     tracking_mode: str = "smoothed",
     debug_frames_dir: Path | None = None,
-) -> tuple[Dict[int, Dict[str, tuple[int, int, float]]], Dict[str, int], Dict[str, int]]:
+) -> tuple[Dict[int, Dict[str, tuple[int, int, float]]], Dict[str, int], Dict[str, int], list[Dict[str, Any]], list[Dict[str, Any]]]:
     if not pose_frames:
-        return {}, {"frames_interpolated": 0, "frames_rejected": 0, "frames_missing": 0}, {"ankle_corrections": 0, "swap_corrections": 0, "knee_swap_corrections": 0, "foot_swap_corrections": 0, "lower_body_rejections": 0, "lower_body_interpolations": 0}
+        return {}, {"frames_interpolated": 0, "frames_rejected": 0, "frames_missing": 0}, {"ankle_corrections": 0, "swap_corrections": 0, "knee_swap_corrections": 0, "foot_swap_corrections": 0, "lower_body_rejections": 0, "lower_body_interpolations": 0, "hand_swap_corrections": 0, "hand_rejections": 0, "hand_interpolations": 0}, [], []
 
     frame_points: Dict[int, Dict[str, tuple[int, int, float]]] = {}
     frame_reasons: Dict[int, str] = {}
@@ -666,16 +1252,19 @@ def _build_dense_pose_series(
 
     dense_series: Dict[int, Dict[str, tuple[int, int, float]]] = {}
     metrics = {"frames_interpolated": 0, "frames_rejected": 0, "frames_missing": 0}
-    corrections = {"ankle_corrections": 0, "swap_corrections": 0, "knee_swap_corrections": 0, "foot_swap_corrections": 0, "lower_body_rejections": 0, "lower_body_interpolations": 0}
+    corrections = {"ankle_corrections": 0, "swap_corrections": 0, "knee_swap_corrections": 0, "foot_swap_corrections": 0, "lower_body_rejections": 0, "lower_body_interpolations": 0, "hand_swap_corrections": 0, "hand_rejections": 0, "hand_interpolations": 0}
+    debug_rows: list[Dict[str, Any]] = []
+    hand_debug_rows: list[Dict[str, Any]] = []
     previous_valid: Dict[str, tuple[int, int, float]] = {}
     previous_valid_index: int | None = None
+    hand_gap_active = {"left": False, "right": False}
 
     if tracking_mode == "raw":
         for current_index in range(max(0, video_frame_count)):
             dense_series[current_index] = frame_points.get(current_index, {})
             if current_index not in frame_points:
                 metrics["frames_missing"] += 1
-        return dense_series, metrics, corrections
+        return dense_series, metrics, corrections, debug_rows, hand_debug_rows
 
     ordered_indices = sorted(frame_points.keys())
     for current_index in range(max(0, video_frame_count)):
@@ -714,21 +1303,78 @@ def _build_dense_pose_series(
                 continue
             valid_points[name] = point
 
-        lower_body_resolved, knee_swap_corrections, foot_swap_corrections, lower_body_rejections, lower_body_interpolations = _resolve_lower_body_assignment(
+        lower_body_resolved, lower_body_summary = _resolve_lower_body_assignment(
             valid_points,
             previous_valid,
+            width=width,
+            height=height,
             confidence_threshold=confidence_threshold,
         )
-        corrections["knee_swap_corrections"] += knee_swap_corrections
-        corrections["foot_swap_corrections"] += foot_swap_corrections
-        corrections["lower_body_rejections"] += lower_body_rejections
-        corrections["lower_body_interpolations"] += lower_body_interpolations
+        corrections["knee_swap_corrections"] += int(lower_body_summary.get("knee_swap_corrections", 0))
+        corrections["foot_swap_corrections"] += int(lower_body_summary.get("foot_swap_corrections", 0))
+        corrections["lower_body_rejections"] += int(lower_body_summary.get("lower_body_rejections", 0))
+        corrections["lower_body_interpolations"] += int(lower_body_summary.get("lower_body_interpolations", 0))
+        lower_body_debug = dict(lower_body_summary.get("debug_record", {}))
 
-        knee_points = {name: lower_body_resolved.get(name) for name in ("left_knee", "right_knee") if lower_body_resolved.get(name) is not None}
-        hip_points = {name: lower_body_resolved.get(name) for name in ("left_hip", "right_hip") if lower_body_resolved.get(name) is not None}
+        debug_rows.append(
+            _build_lower_body_frame_log(
+                frame_index=current_index,
+                raw_points=source_points,
+                corrected_points=lower_body_resolved,
+                selected_assignment=str(lower_body_debug.get("selected_assignment", "A")),
+                same_score=float(lower_body_debug.get("same_assignment_score", float("inf"))),
+                swapped_score=float(lower_body_debug.get("swapped_assignment_score", float("inf"))),
+                swap_corrected=bool(lower_body_debug.get("lower_body_swap_corrected", False)),
+                rejected=bool(lower_body_debug.get("lower_body_rejected", False)),
+                used_previous=bool(lower_body_debug.get("lower_body_used_previous", False)),
+                source_reason=frame_reasons.get(current_index, "source"),
+                correction_reason=str(lower_body_debug.get("lower_body_correction_reason", "")),
+            )
+        )
+
+        hand_resolved, hand_summary = _resolve_hand_assignment(
+            lower_body_resolved,
+            previous_valid,
+            width=width,
+            height=height,
+            confidence_threshold=confidence_threshold,
+        )
+        corrections["hand_swap_corrections"] += int(hand_summary.get("hand_swap_corrections", 0))
+        corrections["hand_rejections"] += int(hand_summary.get("hand_rejections", 0))
+        hand_debug = dict(hand_summary.get("debug_record", {}))
+
+        for side in ("left", "right"):
+            wrist_name = f"{side}_wrist"
+            raw_wrist = valid_points.get(wrist_name)
+            if raw_wrist is not None and raw_wrist[2] >= confidence_threshold and hand_resolved.get(wrist_name) is not None:
+                hand_gap_active[side] = False
+            if hand_debug.get(f"{side}_wrist_used_previous") and not hand_gap_active[side]:
+                corrections["hand_interpolations"] += 1
+                hand_gap_active[side] = True
+            if hand_debug.get(f"{side}_wrist_rejected") and raw_wrist is None:
+                hand_gap_active[side] = False
+
+        hand_debug_rows.append(
+            _build_hand_frame_log(
+                frame_index=current_index,
+                raw_points=valid_points,
+                corrected_points=hand_resolved,
+                selected_assignment=str(hand_debug.get("selected_assignment", "A")),
+                same_score=float(hand_debug.get("same_assignment_score", float("inf"))),
+                swapped_score=float(hand_debug.get("swapped_assignment_score", float("inf"))),
+                swap_corrected=bool(hand_debug.get("hand_swap_corrected", False)),
+                rejected=bool(hand_debug.get("hand_rejected", False)),
+                used_previous=bool(hand_debug.get("hand_used_previous", False)),
+                source_reason=frame_reasons.get(current_index, "source"),
+                correction_reason=str(hand_debug.get("hand_correction_reason", "")),
+            )
+        )
+
+        knee_points = {name: hand_resolved.get(name) for name in ("left_knee", "right_knee") if hand_resolved.get(name) is not None}
+        hip_points = {name: hand_resolved.get(name) for name in ("left_hip", "right_hip") if hand_resolved.get(name) is not None}
 
         corrected_points, ankle_corrections, swap_corrections = correct_ankle_tracking(
-            lower_body_resolved,
+            hand_resolved,
             previous_valid,
             knee_points,
             hip_points,
@@ -770,7 +1416,7 @@ def _build_dense_pose_series(
         if debug_frames_dir and frame_reasons.get(current_index) in {DEBUG_FRAME_REASONS["rejected_landmark"], DEBUG_FRAME_REASONS["ankle_jump"], DEBUG_FRAME_REASONS["pose_missing"], DEBUG_FRAME_REASONS["left_right_swap"], DEBUG_FRAME_REASONS["interpolated"]}:
             debug_frames_dir.mkdir(parents=True, exist_ok=True)
 
-    return dense_series, metrics, corrections
+    return dense_series, metrics, corrections, debug_rows, hand_debug_rows
 
 
 def save_overlay_video(frames: Iterable[np.ndarray], output_path: str | Path, fps: float, frame_size: tuple[int, int]) -> str:
@@ -968,9 +1614,12 @@ def generate_pose_overlay(
     hands_tracked_frames = 0
     feet_tracked_frames = 0
     tracking_debug_frames: list[np.ndarray] = []
+    lower_body_debug_frames: list[np.ndarray] = []
+    hand_debug_frames: list[np.ndarray] = []
     pose_frame_count = sum(1 for frame in pose_frames if frame.get("landmarks"))
     raw_frame_indices = {int(frame.get("frame_index", 0) or 0) for frame in pose_frames}
-    dense_series, dense_metrics, correction_metrics = _build_dense_pose_series(
+    LOGGER.info("POSE LANDMARK MAPPING %s", json.dumps(LANDMARK_INDEX_MAPPING, sort_keys=True))
+    dense_series, dense_metrics, correction_metrics, lower_body_debug_rows, hand_debug_rows = _build_dense_pose_series(
         video_frame_count,
         pose_frames,
         width=width,
@@ -1078,6 +1727,20 @@ def generate_pose_overlay(
                     )
                 tracking_debug_frames.append(tracking_debug_frame)
 
+            lower_body_debug_frame = _draw_lower_body_debug_overlay(
+                frame,
+                frame_points,
+                lower_body_debug_rows[frame_index] if frame_index < len(lower_body_debug_rows) else {},
+            )
+            lower_body_debug_frames.append(lower_body_debug_frame)
+
+            hand_debug_frame = _draw_hand_debug_overlay(
+                frame,
+                frame_points,
+                hand_debug_rows[frame_index] if frame_index < len(hand_debug_rows) else {},
+            )
+            hand_debug_frames.append(hand_debug_frame)
+
         if frames_processed == 1:
             cv2.putText(
                 frame,
@@ -1110,14 +1773,68 @@ def generate_pose_overlay(
 
     capture.release()
 
+    raw_pose_csv_path = overlay_root / f"{video_file.stem}_raw_pose_landmarks.csv"
+    corrected_pose_csv_path = overlay_root / f"{video_file.stem}_corrected_pose_landmarks.csv"
+    lower_body_debug_csv_path = overlay_root / f"{video_file.stem}_lower_body_tracking_debug.csv"
+    hand_debug_csv_path = overlay_root / f"{video_file.stem}_hand_tracking_debug.csv"
+
+    raw_rows: list[Dict[str, Any]] = []
+    for pose_frame in pose_frames:
+        frame_index = int(pose_frame.get("frame_index", 0) or 0)
+        landmarks = pose_frame.get("landmarks", {}) or {}
+        for name, landmark in landmarks.items():
+            raw_rows.append(
+                {
+                    "frame_number": frame_index,
+                    "keypoint_name": name,
+                    "x": landmark.get("x"),
+                    "y": landmark.get("y"),
+                    "confidence": landmark.get("visibility", landmark.get("confidence")),
+                }
+            )
+
+    corrected_rows: list[Dict[str, Any]] = []
+    for frame_index, frame_points in sorted(dense_series.items()):
+        for name, point in frame_points.items():
+            corrected_rows.append(
+                {
+                    "frame_number": frame_index,
+                    "keypoint_name": name,
+                    "x": point[0],
+                    "y": point[1],
+                    "confidence": point[2],
+                }
+            )
+
+    if raw_rows:
+        pd.DataFrame(raw_rows).to_csv(raw_pose_csv_path, index=False)
+    if corrected_rows:
+        pd.DataFrame(corrected_rows).to_csv(corrected_pose_csv_path, index=False)
+    if lower_body_debug_rows:
+        pd.DataFrame(lower_body_debug_rows).to_csv(lower_body_debug_csv_path, index=False)
+    if hand_debug_rows:
+        pd.DataFrame(hand_debug_rows).to_csv(hand_debug_csv_path, index=False)
+
     saved_path = save_overlay_video(rendered_frames, overlay_path, fps, frame_size)
     overlay_validation = validate_overlay_video(saved_path, video_file)
     tracking_debug_video_path = None
     tracking_debug_video_url = None
+    lower_body_debug_video_path = None
+    lower_body_debug_video_url = None
+    hand_debug_video_path = None
+    hand_debug_video_url = None
     if tracking_debug_frames:
         tracking_debug_path = overlay_root / f"{video_file.stem}_tracking_debug.mp4"
         tracking_debug_video_path = save_overlay_video(tracking_debug_frames, tracking_debug_path, fps, frame_size)
         tracking_debug_video_url = f"/outputs/overlays/{Path(tracking_debug_video_path).name}"
+    if lower_body_debug_frames:
+        lower_body_debug_path = overlay_root / "lower_body_debug.mp4"
+        lower_body_debug_video_path = save_overlay_video(lower_body_debug_frames, lower_body_debug_path, fps, frame_size)
+        lower_body_debug_video_url = f"/outputs/overlays/{Path(lower_body_debug_video_path).name}"
+    if hand_debug_frames:
+        hand_debug_path = overlay_root / "hand_tracking_debug.mp4"
+        hand_debug_video_path = save_overlay_video(hand_debug_frames, hand_debug_path, fps, frame_size)
+        hand_debug_video_url = f"/outputs/overlays/{Path(hand_debug_video_path).name}"
     LOGGER.info(
         "OVERLAY VIDEO CREATED path=%s size_mb=%s frames=%s",
         saved_path,
@@ -1128,6 +1845,8 @@ def generate_pose_overlay(
     detection_rate = round((frames_with_pose / frames_processed) * 100.0, 2) if frames_processed else None
     average_confidence = round(float(np.mean(confidence_values)), 3) if confidence_values else None
     average_pose_quality = round(float(np.mean(pose_quality_values)), 2) if pose_quality_values else 0.0
+    left_hand_confidence = round(float(np.mean([point[2] for frame in dense_series.values() if (point := frame.get("left_wrist")) is not None])), 3) if dense_series else None
+    right_hand_confidence = round(float(np.mean([point[2] for frame in dense_series.values() if (point := frame.get("right_wrist")) is not None])), 3) if dense_series else None
     quality_metrics = {
         "frames_processed": frames_processed,
         "frames_with_pose": frames_with_pose,
@@ -1141,12 +1860,18 @@ def generate_pose_overlay(
         "foot_swap_corrections": correction_metrics.get("foot_swap_corrections", 0),
         "lower_body_rejections": correction_metrics.get("lower_body_rejections", 0),
         "lower_body_interpolations": correction_metrics.get("lower_body_interpolations", 0),
+        "hand_swap_corrections": correction_metrics.get("hand_swap_corrections", 0),
+        "hand_rejections": correction_metrics.get("hand_rejections", 0),
+        "hand_interpolations": correction_metrics.get("hand_interpolations", 0),
         "debug_frame_count": len(debug_frame_paths),
         "head_tracked_rate": round((head_tracked_frames / frames_processed) * 100.0, 2) if frames_processed else None,
         "hands_tracked_frames": hands_tracked_frames,
         "feet_tracked_frames": feet_tracked_frames,
+        "hand_tracking_rate": round((hands_tracked_frames / frames_processed) * 100.0, 2) if frames_processed else None,
         "hands_tracked_rate": round((hands_tracked_frames / frames_processed) * 100.0, 2) if frames_processed else None,
         "feet_tracked_rate": round((feet_tracked_frames / frames_processed) * 100.0, 2) if frames_processed else None,
+        "left_hand_confidence": left_hand_confidence,
+        "right_hand_confidence": right_hand_confidence,
         "average_pose_quality_score": average_pose_quality,
         "tracking_mode": tracking_mode,
     }
@@ -1166,6 +1891,9 @@ def generate_pose_overlay(
             "overlay_validation": overlay_validation,
             "tracking_debug_video_path": tracking_debug_video_path,
             "tracking_debug_video_url": tracking_debug_video_url,
+            "hand_tracking_debug_video_path": hand_debug_video_path,
+            "hand_tracking_debug_video_url": hand_debug_video_url,
+            "hand_tracking_debug_csv": str(hand_debug_csv_path) if hand_debug_csv_path.exists() else None,
             "frames_processed": frames_processed,
             "frames_with_pose": 0,
             "detection_rate": detection_rate,
@@ -1183,8 +1911,17 @@ def generate_pose_overlay(
         "overlay_validation": overlay_validation,
         "overlay_style": overlay_style,
         "tracking_mode": tracking_mode,
+        "raw_pose_landmarks_csv": str(raw_pose_csv_path) if raw_pose_csv_path.exists() else None,
+        "corrected_pose_landmarks_csv": str(corrected_pose_csv_path) if corrected_pose_csv_path.exists() else None,
+        "lower_body_tracking_debug_csv": str(lower_body_debug_csv_path) if lower_body_debug_csv_path.exists() else None,
+        "hand_tracking_debug_csv": str(hand_debug_csv_path) if hand_debug_csv_path.exists() else None,
         "tracking_debug_video_path": tracking_debug_video_path,
         "tracking_debug_video_url": tracking_debug_video_url,
+        "lower_body_debug_video_path": lower_body_debug_video_path,
+        "lower_body_debug_video_url": lower_body_debug_video_url,
+        "hand_tracking_debug_video_path": hand_debug_video_path,
+        "hand_tracking_debug_video_url": hand_debug_video_url,
+        "hand_tracking_debug_csv": str(hand_debug_csv_path) if hand_debug_csv_path.exists() else None,
         "frames_processed": frames_processed,
         "frames_with_pose": frames_with_pose,
         "detection_rate": detection_rate,
@@ -1194,4 +1931,5 @@ def generate_pose_overlay(
         "frame_size": {"width": width, "height": height},
         "quality_metrics": quality_metrics,
         "debug_frame_paths": debug_frame_paths[:12],
+        "landmark_mapping": LANDMARK_INDEX_MAPPING,
     }
