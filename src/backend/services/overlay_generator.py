@@ -400,6 +400,86 @@ def _distance_score(point_a: tuple[int, int, float] | None, point_b: tuple[int, 
     return float(np.hypot(point_a[0] - point_b[0], point_a[1] - point_b[1]))
 
 
+def _lower_body_chain_cost(
+    points: Dict[str, tuple[int, int, float]],
+    previous_points: Dict[str, tuple[int, int, float]],
+    side: str,
+) -> float:
+    hip = points.get(f"{side}_hip")
+    knee = points.get(f"{side}_knee")
+    ankle = points.get(f"{side}_ankle")
+    if hip is None or knee is None or ankle is None:
+        return float("inf")
+
+    cost = _distance_score(hip, knee) * 0.35 + _distance_score(knee, ankle)
+    previous_hip = previous_points.get(f"{side}_hip")
+    previous_knee = previous_points.get(f"{side}_knee")
+    previous_ankle = previous_points.get(f"{side}_ankle")
+
+    if previous_hip is not None:
+        cost += _distance_score(hip, previous_hip) * 0.25
+    if previous_knee is not None:
+        cost += _distance_score(knee, previous_knee) * 0.5
+    if previous_ankle is not None:
+        cost += _distance_score(ankle, previous_ankle) * 0.5
+    return cost
+
+
+def _resolve_lower_body_assignment(
+    frame_points: Dict[str, tuple[int, int, float]],
+    previous_points: Dict[str, tuple[int, int, float]],
+    *,
+    confidence_threshold: float,
+) -> tuple[Dict[str, tuple[int, int, float]], int, int, int, int]:
+    resolved = dict(frame_points)
+    knee_swap_corrections = 0
+    foot_swap_corrections = 0
+    lower_body_rejections = 0
+    lower_body_interpolations = 0
+
+    left_confident = resolved.get("left_knee") is not None and resolved["left_knee"][2] >= confidence_threshold and resolved.get("left_ankle") is not None and resolved["left_ankle"][2] >= confidence_threshold
+    right_confident = resolved.get("right_knee") is not None and resolved["right_knee"][2] >= confidence_threshold and resolved.get("right_ankle") is not None and resolved["right_ankle"][2] >= confidence_threshold
+
+    if left_confident and right_confident:
+        same_cost = _lower_body_chain_cost(resolved, previous_points, "left") + _lower_body_chain_cost(resolved, previous_points, "right")
+        swapped = dict(resolved)
+        swapped["left_knee"], swapped["right_knee"] = swapped["right_knee"], swapped["left_knee"]
+        swapped["left_ankle"], swapped["right_ankle"] = swapped["right_ankle"], swapped["left_ankle"]
+        swapped_cost = _lower_body_chain_cost(swapped, previous_points, "left") + _lower_body_chain_cost(swapped, previous_points, "right")
+        if swapped_cost + 12.0 < same_cost:
+            knee_swap_corrections += 1
+            foot_swap_corrections += 1
+            resolved = swapped
+        elif same_cost == float("inf"):
+            lower_body_rejections += 1
+    else:
+        lower_body_rejections += 1
+
+    for side in ("left", "right"):
+        knee_name = f"{side}_knee"
+        ankle_name = f"{side}_ankle"
+        knee_point = resolved.get(knee_name)
+        ankle_point = resolved.get(ankle_name)
+        previous_knee = previous_points.get(knee_name)
+        previous_ankle = previous_points.get(ankle_name)
+
+        if knee_point is not None and previous_knee is not None and detect_unrealistic_jump(previous_knee, knee_point, threshold_px=confidence_threshold * 240.0):
+            resolved.pop(knee_name, None)
+            lower_body_rejections += 1
+            if previous_knee[2] >= confidence_threshold:
+                resolved[knee_name] = previous_knee
+                lower_body_interpolations += 1
+
+        if ankle_point is not None and previous_ankle is not None and detect_unrealistic_jump(previous_ankle, ankle_point, threshold_px=confidence_threshold * 260.0):
+            resolved.pop(ankle_name, None)
+            lower_body_rejections += 1
+            if previous_ankle[2] >= confidence_threshold:
+                resolved[ankle_name] = previous_ankle
+                lower_body_interpolations += 1
+
+    return resolved, knee_swap_corrections, foot_swap_corrections, lower_body_rejections, lower_body_interpolations
+
+
 def validate_landmark(
     name: str,
     point: tuple[int, int, float] | None,
@@ -576,7 +656,7 @@ def _build_dense_pose_series(
     debug_frames_dir: Path | None = None,
 ) -> tuple[Dict[int, Dict[str, tuple[int, int, float]]], Dict[str, int], Dict[str, int]]:
     if not pose_frames:
-        return {}, {"frames_interpolated": 0, "frames_rejected": 0, "frames_missing": 0}, {"ankle_corrections": 0, "swap_corrections": 0}
+        return {}, {"frames_interpolated": 0, "frames_rejected": 0, "frames_missing": 0}, {"ankle_corrections": 0, "swap_corrections": 0, "knee_swap_corrections": 0, "foot_swap_corrections": 0, "lower_body_rejections": 0, "lower_body_interpolations": 0}
 
     frame_points: Dict[int, Dict[str, tuple[int, int, float]]] = {}
     frame_reasons: Dict[int, str] = {}
@@ -586,7 +666,7 @@ def _build_dense_pose_series(
 
     dense_series: Dict[int, Dict[str, tuple[int, int, float]]] = {}
     metrics = {"frames_interpolated": 0, "frames_rejected": 0, "frames_missing": 0}
-    corrections = {"ankle_corrections": 0, "swap_corrections": 0}
+    corrections = {"ankle_corrections": 0, "swap_corrections": 0, "knee_swap_corrections": 0, "foot_swap_corrections": 0, "lower_body_rejections": 0, "lower_body_interpolations": 0}
     previous_valid: Dict[str, tuple[int, int, float]] = {}
     previous_valid_index: int | None = None
 
@@ -634,11 +714,21 @@ def _build_dense_pose_series(
                 continue
             valid_points[name] = point
 
-        knee_points = {name: valid_points.get(name) for name in ("left_knee", "right_knee") if valid_points.get(name) is not None}
-        hip_points = {name: valid_points.get(name) for name in ("left_hip", "right_hip") if valid_points.get(name) is not None}
+        lower_body_resolved, knee_swap_corrections, foot_swap_corrections, lower_body_rejections, lower_body_interpolations = _resolve_lower_body_assignment(
+            valid_points,
+            previous_valid,
+            confidence_threshold=confidence_threshold,
+        )
+        corrections["knee_swap_corrections"] += knee_swap_corrections
+        corrections["foot_swap_corrections"] += foot_swap_corrections
+        corrections["lower_body_rejections"] += lower_body_rejections
+        corrections["lower_body_interpolations"] += lower_body_interpolations
+
+        knee_points = {name: lower_body_resolved.get(name) for name in ("left_knee", "right_knee") if lower_body_resolved.get(name) is not None}
+        hip_points = {name: lower_body_resolved.get(name) for name in ("left_hip", "right_hip") if lower_body_resolved.get(name) is not None}
 
         corrected_points, ankle_corrections, swap_corrections = correct_ankle_tracking(
-            valid_points,
+            lower_body_resolved,
             previous_valid,
             knee_points,
             hip_points,
@@ -1047,6 +1137,10 @@ def generate_pose_overlay(
         "head_tracked_frames": head_tracked_frames,
         "ankle_corrections": correction_metrics.get("ankle_corrections", 0),
         "swap_corrections": correction_metrics.get("swap_corrections", 0),
+        "knee_swap_corrections": correction_metrics.get("knee_swap_corrections", 0),
+        "foot_swap_corrections": correction_metrics.get("foot_swap_corrections", 0),
+        "lower_body_rejections": correction_metrics.get("lower_body_rejections", 0),
+        "lower_body_interpolations": correction_metrics.get("lower_body_interpolations", 0),
         "debug_frame_count": len(debug_frame_paths),
         "head_tracked_rate": round((head_tracked_frames / frames_processed) * 100.0, 2) if frames_processed else None,
         "hands_tracked_frames": hands_tracked_frames,

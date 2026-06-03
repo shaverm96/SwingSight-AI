@@ -53,6 +53,8 @@ state.overlayStyle = "smoothed";
 state.isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
 state.modalViewMode = "original";
 state.modalOpen = false;
+state.originalVideoInfo = null;
+state.overlayVideoInfo = null;
 
 wireVideoDebug(analysisPreview, "analysisPreview");
 wireVideoDebug(overlayModalPreview, "overlayModalPreview");
@@ -150,14 +152,11 @@ function setVisualizationMode(mode) {
   state.visualizationMode = mode;
   const nextSource = mode === "overlay" ? state.overlayVideoUrl : state.originalVideoUrl;
 
-  if (nextSource) {
-    analysisPreview.pause();
-    analysisPreview.srcObject = null;
-    analysisPreview.removeAttribute("src");
-    analysisPreview.src = nextSource;
-    analysisPreview.load();
-    analysisPreview.play().catch(() => {});
-  }
+  loadVideoSource(analysisPreview, nextSource, {
+    mode,
+    label: "main",
+    fallbackInfo: mode === "overlay" ? state.overlayVideoInfo : state.originalVideoInfo,
+  });
 
   originalViewButton.classList.toggle("is-active", mode === "original");
   overlayViewButton.classList.toggle("is-active", mode === "overlay");
@@ -200,18 +199,133 @@ function setModalVideoMode(mode) {
   }
   state.modalViewMode = mode;
   const nextSource = mode === "overlay" ? state.overlayVideoUrl : state.originalVideoUrl;
-  if (!nextSource) {
-    return;
-  }
-  overlayModalPreview.pause();
-  overlayModalPreview.srcObject = null;
-  overlayModalPreview.removeAttribute("src");
-  overlayModalPreview.src = nextSource;
-  overlayModalPreview.load();
-  overlayModalPreview.play().catch(() => {});
+  loadVideoSource(overlayModalPreview, nextSource, {
+    mode,
+    label: "modal",
+    fallbackInfo: mode === "overlay" ? state.overlayVideoInfo : state.originalVideoInfo,
+  });
   modalOriginalButton.classList.toggle("is-active", mode === "original");
   modalOverlayButton.classList.toggle("is-active", mode === "overlay");
   modalOverlayButton.disabled = !state.overlayVideoUrl;
+}
+
+function loadVideoSource(videoEl, sourceUrl, options) {
+  if (!videoEl) {
+    return false;
+  }
+
+  const mode = options?.mode || "unknown";
+  const label = options?.label || "video";
+  const fallbackInfo = options?.fallbackInfo || {};
+  const normalizedSource = sourceUrl || "";
+
+  console.info("[overlay-video] current video mode", { label, mode, currentVideoMode: state.visualizationMode });
+  console.info("[overlay-video] current video url", { label, mode, currentVideoUrl: normalizedSource });
+
+  if (!normalizedSource) {
+    const message = label === "main"
+      ? "Original video failed to load."
+      : "Overlay video failed to load.";
+    updateVideoFailure(message, fallbackInfo, label);
+    console.error("[overlay-video] load failed (missing source)", { label, mode, fallbackInfo });
+    return false;
+  }
+
+  videoEl.preload = "auto";
+  videoEl.pause();
+  videoEl.srcObject = null;
+  videoEl.removeAttribute("src");
+
+  return new Promise((resolve) => {
+    let settled = false;
+    const cleanup = () => {
+      videoEl.removeEventListener("loadedmetadata", onLoadedMetadata);
+      videoEl.removeEventListener("loadeddata", onLoadedData);
+      videoEl.removeEventListener("canplay", onCanPlay);
+      videoEl.removeEventListener("error", onError);
+    };
+
+    const finish = (ok) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      cleanup();
+      resolve(ok);
+    };
+
+    const onLoadedMetadata = () => {
+      console.info("[overlay-video] video metadata loaded", {
+        label,
+        mode,
+        currentVideoUrl: videoEl.currentSrc || videoEl.src,
+        videoWidth: videoEl.videoWidth,
+        videoHeight: videoEl.videoHeight,
+        duration: videoEl.duration,
+      });
+      console.info("[overlay-video] video metadata loaded success", { label, mode });
+    };
+
+    const onLoadedData = () => {
+      console.info("[overlay-video] video load success", {
+        label,
+        mode,
+        currentVideoUrl: videoEl.currentSrc || videoEl.src,
+      });
+      videoEl.play().catch((error) => {
+        console.info("[overlay-video] autoplay blocked", { label, mode, error: error?.message || String(error) });
+      });
+      finish(true);
+    };
+
+    const onCanPlay = () => {
+      console.debug("[overlay-video] canplay", { label, mode, currentVideoUrl: videoEl.currentSrc || videoEl.src });
+    };
+
+    const onError = () => {
+      const error = videoEl.error;
+      const message = label === "main"
+        ? "Original video failed to load."
+        : "Overlay video failed to load.";
+      console.error("[overlay-video] video load failure", {
+        label,
+        mode,
+        currentVideoUrl: videoEl.currentSrc || videoEl.src,
+        errorCode: error ? error.code : null,
+        errorMessage: error ? error.message || null : null,
+        fallbackInfo,
+      });
+      updateVideoFailure(message, fallbackInfo, label);
+      finish(false);
+    };
+
+    videoEl.addEventListener("loadedmetadata", onLoadedMetadata, { once: true });
+    videoEl.addEventListener("loadeddata", onLoadedData, { once: true });
+    videoEl.addEventListener("canplay", onCanPlay, { once: true });
+    videoEl.addEventListener("error", onError, { once: true });
+
+    videoEl.src = normalizedSource;
+    videoEl.load();
+  });
+}
+
+function updateVideoFailure(message, fallbackInfo, label) {
+  const info = fallbackInfo || {};
+  const parts = [message];
+  if (info.video_path) {
+    parts.push(`File path: ${info.video_path}`);
+  }
+  if (info.size_mb !== null && info.size_mb !== undefined) {
+    parts.push(`File size: ${info.size_mb} MB`);
+  }
+  if (info.error) {
+    parts.push(`Backend response: ${info.error}`);
+  }
+  if (label === "main") {
+    visualizationStatus.textContent = parts.join(" ");
+  } else if (label === "modal") {
+    console.warn("[overlay-video] modal playback failure", parts.join(" "));
+  }
 }
 
 async function initCamera() {
@@ -406,6 +520,18 @@ function renderResults(result) {
   const trackingDebugUrl = trackingStats?.tracking_debug_video_url || state.overlayVariants?.[state.overlayStyle]?.tracking_debug_video_url || null;
   const rawOverlayUrl = visualization?.raw_overlay_video_url || state.overlayVariants?.raw?.overlay_video_url || null;
   const smoothedOverlayUrl = visualization?.smoothed_overlay_video_url || state.overlayVariants?.smoothed?.overlay_video_url || state.overlayVariants?.simple?.overlay_video_url || null;
+  state.originalVideoInfo = {
+    video_path: result?.debug?.file_paths?.video_path || result?.video_metadata?.video_path || null,
+    size_mb: result?.video_metadata?.size_mb ?? null,
+    error: result?.video_metadata?.error || null,
+    response: result?.video_metadata || {},
+  };
+  state.overlayVideoInfo = {
+    video_path: overlayValidation?.overlay_path || null,
+    size_mb: overlayValidation?.size_mb ?? null,
+    error: overlayValidation?.valid === false ? "Overlay validation failed." : null,
+    response: overlayValidation || {},
+  };
 
   analysisIdValue.textContent = result.analysis_id || "--";
   detectedClubValue.textContent = detectedClub;
@@ -496,6 +622,8 @@ function wireVideoDebug(videoEl, label) {
   const logEvent = (eventName) => {
     const error = videoEl.error;
     console.debug(`[overlay-debug] ${label}:${eventName}`, {
+      currentVideoMode: state.visualizationMode,
+      currentVideoUrl: videoEl.currentSrc || videoEl.src,
       src: videoEl.currentSrc || videoEl.src,
       readyState: videoEl.readyState,
       networkState: videoEl.networkState,

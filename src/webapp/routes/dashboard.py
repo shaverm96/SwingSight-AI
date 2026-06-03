@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import mimetypes
 
 from flask import Blueprint, Response, current_app, jsonify, render_template, request, send_file, send_from_directory
 
@@ -218,7 +219,12 @@ def create_report(analysis_id: str) -> Response:
 @dashboard_bp.get("/uploads/<path:filename>")
 def uploaded_file(filename: str) -> Response:
     service = _service()
-    return send_from_directory(service.uploads_dir, filename)
+    file_path = (Path(service.uploads_dir) / filename).resolve()
+    if not file_path.exists() or not file_path.is_file():
+        return jsonify({"error": "uploaded file not found"}), 404
+    mimetype, _ = mimetypes.guess_type(file_path.name)
+    current_app.logger.info("API SERVING upload file path=%s mimetype=%s", file_path, mimetype or "application/octet-stream")
+    return send_file(file_path, mimetype=mimetype or "application/octet-stream", conditional=True)
 
 
 @dashboard_bp.get("/outputs/<path:filename>")
