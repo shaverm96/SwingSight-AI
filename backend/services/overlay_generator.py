@@ -23,6 +23,7 @@ draw_skeleton = _src_module.draw_skeleton
 draw_motion_trails = _src_module.draw_motion_trails
 save_overlay_video = _src_module.save_overlay_video
 load_pose_landmarks = _src_module.load_pose_landmarks
+validate_overlay_video = _src_module.validate_overlay_video
 
 __all__ = [
     "generate_pose_overlay",
@@ -30,4 +31,5 @@ __all__ = [
     "draw_motion_trails",
     "save_overlay_video",
     "load_pose_landmarks",
+    "validate_overlay_video",
 ]

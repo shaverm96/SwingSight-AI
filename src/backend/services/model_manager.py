@@ -15,7 +15,7 @@ import cv2
 from swingsight.club_recognition import recognize_club_from_frame
 from swingsight.metrics import compute_swing_metrics
 from swingsight.pose_estimation import run_pose_estimation
-from backend.services.overlay_generator import generate_pose_overlay
+from backend.services.overlay_generator import generate_pose_overlay, validate_overlay_video
 from webapp.inference.pipeline_components import check_body_visibility_from_frame
 from webapp.utils.storage import ensure_dir
 
@@ -321,6 +321,7 @@ class ModelManager:
             "video_path": str(video_file),
             "exists": video_file.exists(),
             "readable": False,
+            "size_mb": None,
             "frame_count": None,
             "fps": None,
             "width": None,
@@ -343,6 +344,10 @@ class ModelManager:
         width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH) or 0)
         height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0)
         capture.release()
+        try:
+            metadata["size_mb"] = round(video_file.stat().st_size / (1024.0 * 1024.0), 3)
+        except Exception:
+            metadata["size_mb"] = None
 
         metadata.update(
             {
@@ -357,6 +362,17 @@ class ModelManager:
 
         if not metadata["readable"]:
             metadata["error"] = "The uploaded video could not be read by OpenCV."
+            self.logger.info("UPLOAD FAILED path=%s metadata=%s", video_file, metadata)
+        else:
+            self.logger.info(
+                "UPLOAD SUCCESS path=%s size_mb=%s frame_count=%s fps=%s width=%s height=%s",
+                video_file,
+                metadata.get("size_mb"),
+                metadata.get("frame_count"),
+                metadata.get("fps"),
+                metadata.get("width"),
+                metadata.get("height"),
+            )
         return metadata
 
     def extract_fallback_frames(self, video_path: str | Path, video_metadata: Optional[Dict[str, Any]] = None, limit: int = 8) -> list[Dict[str, Any]]:
@@ -557,6 +573,16 @@ class ModelManager:
         pose_runtime = self._pose_model_runtime()
         pose_frames = run_pose_estimation(str(video_file), self.config) if pose_runtime["loaded"] else []
         pose_landmarks_csv = self._save_pose_landmark_rows(video_file, pose_frames)
+        if pose_frames:
+            self.logger.info(
+                "POSE SUCCESS video=%s pose_frames=%s landmarks=%s pose_csv=%s",
+                video_file,
+                len(pose_frames),
+                sum(1 for frame in pose_frames if frame.get("landmarks")),
+                pose_landmarks_csv,
+            )
+        else:
+            self.logger.info("POSE FAILED video=%s pose_frames=0 pose_csv=%s", video_file, pose_landmarks_csv)
         technical_metrics = compute_swing_metrics(pose_frames, self.config) if pose_frames else {
             "hip_rotation": None,
             "shoulder_rotation": None,
@@ -576,6 +602,8 @@ class ModelManager:
         )
         overlay_video_path = overlay_result.get("overlay_video_path")
         overlay_video_url = overlay_result.get("overlay_video_url")
+        overlay_validation = overlay_result.get("overlay_validation") or validate_overlay_video(overlay_video_path, video_file) if overlay_video_path else {}
+        self.logger.info("OVERLAY VALIDATION video=%s result=%s", video_file, overlay_validation)
         overlay_files = self.collect_overlay_files(video_file.stem)
         if overlay_video_url:
             overlay_files = sorted(dict.fromkeys([overlay_video_url, *overlay_files]))
@@ -645,12 +673,14 @@ class ModelManager:
                 "fallback_frames_dir": str((self.experiments_dir / "fallback_frames" / video_file.stem).resolve()),
                 "pose_landmarks_csv": pose_landmarks_csv,
                 "overlay_video_path": overlay_video_path,
+                "overlay_validation": overlay_validation,
             },
             "file_paths": {
                 "video_path": str(video_file),
                 "pose_landmarks_csv": pose_landmarks_csv,
                 "overlay_video_path": overlay_video_path,
                 "fallback_frames_dir": str((self.experiments_dir / "fallback_frames" / video_file.stem).resolve()),
+                "overlay_validation": overlay_validation,
             },
         }
 
@@ -665,6 +695,7 @@ class ModelManager:
             "tracking": tracking,
             "model_outputs": model_outputs,
             "overlay_files": overlay_files,
+            "overlay_validation": overlay_validation,
             "visualization": {
                 "original_video_url": self._public_upload_url(video_file),
                 "overlay_video_url": overlay_video_url,

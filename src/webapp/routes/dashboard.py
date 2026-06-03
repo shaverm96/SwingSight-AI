@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from flask import Blueprint, Response, current_app, jsonify, render_template, request, send_from_directory
+from flask import Blueprint, Response, current_app, jsonify, render_template, request, send_file, send_from_directory
 
 from webapp.services.analysis_service import AnalysisContext, AnalysisService
 from webapp.utils.storage import save_filestorage
@@ -224,7 +224,11 @@ def uploaded_file(filename: str) -> Response:
 @dashboard_bp.get("/outputs/<path:filename>")
 def output_file(filename: str) -> Response:
     service = _service()
-    return send_from_directory(service.outputs_dir, filename)
+    file_path = (Path(service.outputs_dir) / filename).resolve()
+    if not file_path.exists() or not file_path.is_file():
+        return jsonify({"error": "output file not found"}), 404
+    current_app.logger.info("API SERVING overlay file path=%s mimetype=%s", file_path, "video/mp4")
+    return send_file(file_path, mimetype="video/mp4", conditional=True)
 
 
 @dashboard_bp.get("/reports/<path:filename>")

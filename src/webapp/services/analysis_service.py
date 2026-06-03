@@ -114,6 +114,7 @@ class AnalysisService:
         }
 
         visualization = analysis.get("visualization", {}) or {}
+        overlay_validation = analysis.get("overlay_validation", {}) or {}
 
         result = {
             "status": "success",
@@ -130,6 +131,7 @@ class AnalysisService:
             "tracking": analysis.get("tracking", {}),
             "model_outputs": analysis.get("model_outputs", {}),
             "overlay_files": analysis.get("overlay_files", []),
+            "overlay_validation": overlay_validation,
             "visualization": visualization,
             "video_metadata": analysis.get("video_metadata", {}),
             "warnings": analysis.get("warnings", []),

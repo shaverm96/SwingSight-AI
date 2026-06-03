@@ -12,18 +12,15 @@ Missing model artifact for club_detector
 Missing model artifact for swing_classifier
  * Debugger is active!
  * Debugger PIN: 451-629-467
-127.0.0.1 - - [02/Jun/2026 21:04:04] "GET / HTTP/1.1" 200 -
-127.0.0.1 - - [02/Jun/2026 21:04:04] "GET / HTTP/1.1" 200 -
-127.0.0.1 - - [02/Jun/2026 21:04:04] "[36mGET /static/js/dashboard.js HTTP/1.1[0m" 304 -
-127.0.0.1 - - [02/Jun/2026 21:04:04] "[36mGET /static/css/dashboard.css HTTP/1.1[0m" 304 -
-127.0.0.1 - - [02/Jun/2026 21:04:04] "[36mGET /static/css/dashboard.css HTTP/1.1[0m" 304 -
-127.0.0.1 - - [02/Jun/2026 21:04:04] "[36mGET /static/js/dashboard.js HTTP/1.1[0m" 304 -
-127.0.0.1 - - [02/Jun/2026 21:04:09] "POST /api/upload-video HTTP/1.1" 200 -
-127.0.0.1 - - [02/Jun/2026 21:04:10] "POST /api/analyze HTTP/1.1" 200 -
-127.0.0.1 - - [02/Jun/2026 21:04:10] "[33mGET /outputs/overlays/video_a8cc44795fd647c999f112afb9575501_overlay.mp4 HTTP/1.1[0m" 404 -
-127.0.0.1 - - [02/Jun/2026 21:04:13] "[33mGET /uploads/video_a8cc44795fd647c999f112afb9575501.mp4 HTTP/1.1[0m" 404 -
-127.0.0.1 - - [02/Jun/2026 21:04:14] "[33mGET /outputs/overlays/video_a8cc44795fd647c999f112afb9575501_overlay.mp4 HTTP/1.1[0m" 404 -
-127.0.0.1 - - [02/Jun/2026 21:04:14] "[33mGET /uploads/video_a8cc44795fd647c999f112afb9575501.mp4 HTTP/1.1[0m" 404 -
-127.0.0.1 - - [02/Jun/2026 21:04:15] "[33mGET /outputs/overlays/video_a8cc44795fd647c999f112afb9575501_overlay.mp4 HTTP/1.1[0m" 404 -
-/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/multiprocessing/resource_tracker.py:400: UserWarning: resource_tracker: There appear to be 1 leaked semaphore objects to clean up at shutdown: {'/loky-35677-o4c1a09q'}
+127.0.0.1 - - [03/Jun/2026 07:16:51] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [03/Jun/2026 07:16:51] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [03/Jun/2026 07:16:51] "[36mGET /static/css/dashboard.css HTTP/1.1[0m" 304 -
+127.0.0.1 - - [03/Jun/2026 07:16:51] "[36mGET /static/js/dashboard.js HTTP/1.1[0m" 304 -
+127.0.0.1 - - [03/Jun/2026 07:16:51] "GET /static/css/dashboard.css?v=20260603 HTTP/1.1" 200 -
+127.0.0.1 - - [03/Jun/2026 07:16:51] "GET /static/js/dashboard.js?v=20260603 HTTP/1.1" 200 -
+127.0.0.1 - - [03/Jun/2026 07:16:56] "POST /api/upload-video HTTP/1.1" 200 -
+127.0.0.1 - - [03/Jun/2026 07:16:57] "POST /api/analyze HTTP/1.1" 200 -
+127.0.0.1 - - [03/Jun/2026 07:16:57] "[33mGET /uploads/video_fb0a367317cd4653903641c4082926c7.mp4 HTTP/1.1[0m" 404 -
+127.0.0.1 - - [03/Jun/2026 07:17:02] "[33mGET /outputs/overlays/video_fb0a367317cd4653903641c4082926c7_overlay.mp4 HTTP/1.1[0m" 404 -
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/multiprocessing/resource_tracker.py:400: UserWarning: resource_tracker: There appear to be 1 leaked semaphore objects to clean up at shutdown: {'/loky-38475-8uesa35u'}
   warnings.warn(

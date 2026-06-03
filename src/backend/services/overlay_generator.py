@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from collections import defaultdict, deque
 from dataclasses import dataclass
 from pathlib import Path
@@ -10,6 +11,10 @@ import numpy as np
 import pandas as pd
 
 from webapp.utils.storage import ensure_dir
+
+
+LOGGER = logging.getLogger(__name__)
+BROWSER_COMPATIBLE_CODECS = {"h264", "avc1", "mp4v", "mp42", "isom", "iso2"}
 
 BODY_POINTS = {
     "head": "nose",
@@ -212,6 +217,60 @@ def save_overlay_video(frames: Iterable[np.ndarray], output_path: str | Path, fp
     return str(output_file)
 
 
+def validate_overlay_video(overlay_path: str | Path, source_video_path: str | Path | None = None) -> Dict[str, Any]:
+    path = Path(overlay_path)
+    result: Dict[str, Any] = {
+        "valid": False,
+        "exists": path.exists() and path.is_file(),
+        "size_mb": 0.0,
+        "frame_count": 0,
+        "fps": None,
+        "width": None,
+        "height": None,
+        "codec": None,
+        "can_open_with_opencv": False,
+        "browser_compatible": False,
+        "overlay_path": str(path),
+    }
+    if source_video_path is not None:
+        result["source_video_path"] = str(source_video_path)
+
+    if not result["exists"]:
+        return result
+
+    try:
+        result["size_mb"] = round(path.stat().st_size / (1024.0 * 1024.0), 3)
+    except Exception:
+        result["size_mb"] = 0.0
+
+    capture = cv2.VideoCapture(str(path))
+    result["can_open_with_opencv"] = bool(capture.isOpened())
+    if not capture.isOpened():
+        capture.release()
+        return result
+
+    frame_count = int(capture.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+    fps = float(capture.get(cv2.CAP_PROP_FPS) or 0.0) or None
+    width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH) or 0) or None
+    height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0) or None
+    fourcc = int(capture.get(cv2.CAP_PROP_FOURCC) or 0)
+    codec = "".join(chr((fourcc >> (8 * index)) & 0xFF) for index in range(4)).strip("\x00 ").lower() or None
+    capture.release()
+
+    result.update(
+        {
+            "frame_count": frame_count,
+            "fps": fps,
+            "width": width,
+            "height": height,
+            "codec": codec,
+            "browser_compatible": bool((path.suffix.lower() in {".mp4", ".mov", ".webm"}) and (codec in BROWSER_COMPATIBLE_CODECS if codec else False)),
+        }
+    )
+    result["valid"] = bool(result["exists"] and result["can_open_with_opencv"] and frame_count > 0 and fps and width and height)
+    return result
+
+
 def load_pose_landmarks(csv_path: str | Path) -> list[Dict[str, Any]]:
     path = Path(csv_path)
     if not path.exists() or not path.is_file():
@@ -252,6 +311,7 @@ def generate_pose_overlay(
     confidence_threshold: float = 0.25,
 ) -> Dict[str, Any]:
     video_file = Path(video_path)
+    LOGGER.info("OVERLAY START video=%s", video_file)
     overlay_root = ensure_dir(output_dir or (video_file.parent / "overlays"))
     overlay_path = overlay_root / (output_name or f"{video_file.stem}_overlay.mp4")
 
@@ -260,12 +320,14 @@ def generate_pose_overlay(
 
     pose_frames = sorted(pose_frames or [], key=lambda item: int(item.get("frame_index", 0) or 0))
     if not video_file.exists() or not video_file.is_file():
+        LOGGER.info("OVERLAY FAILED video missing=%s", video_file)
         return {
             "status": "error",
             "message": "Pose tracking could not be generated from this video.",
             "warnings": ["Video file could not be found."],
             "overlay_video_path": None,
             "overlay_video_url": None,
+            "overlay_validation": validate_overlay_video(overlay_path, video_file),
             "frames_processed": 0,
             "frames_with_pose": 0,
             "detection_rate": None,
@@ -275,6 +337,7 @@ def generate_pose_overlay(
     capture = cv2.VideoCapture(str(video_file))
     if not capture.isOpened():
         capture.release()
+        LOGGER.info("OVERLAY FAILED unable to open source video=%s", video_file)
         return {
             "status": "error",
             "message": "Pose tracking could not be generated from this video.",
@@ -286,6 +349,7 @@ def generate_pose_overlay(
             ],
             "overlay_video_path": None,
             "overlay_video_url": None,
+            "overlay_validation": validate_overlay_video(overlay_path, video_file),
             "frames_processed": 0,
             "frames_with_pose": 0,
             "detection_rate": None,
@@ -299,12 +363,14 @@ def generate_pose_overlay(
 
     if width <= 0 or height <= 0:
         capture.release()
+        LOGGER.info("OVERLAY FAILED invalid source dimensions video=%s width=%s height=%s", video_file, width, height)
         return {
             "status": "error",
             "message": "Pose tracking could not be generated from this video.",
             "warnings": ["Video dimensions could not be read."],
             "overlay_video_path": None,
             "overlay_video_url": None,
+            "overlay_validation": validate_overlay_video(overlay_path, video_file),
             "frames_processed": 0,
             "frames_with_pose": 0,
             "detection_rate": None,
@@ -379,10 +445,19 @@ def generate_pose_overlay(
     capture.release()
 
     saved_path = save_overlay_video(rendered_frames, overlay_path, fps, frame_size)
+    overlay_validation = validate_overlay_video(saved_path, video_file)
+    LOGGER.info(
+        "OVERLAY VIDEO CREATED path=%s size_mb=%s frames=%s",
+        saved_path,
+        overlay_validation.get("size_mb"),
+        overlay_validation.get("frame_count"),
+    )
+    LOGGER.info("OVERLAY VALIDATION %s", overlay_validation)
     detection_rate = round((frames_with_pose / frames_processed) * 100.0, 2) if frames_processed else None
     average_confidence = round(float(np.mean(confidence_values)), 3) if confidence_values else None
 
     if not pose_frame_count:
+        LOGGER.info("POSE FAILED video=%s pose_frames=%s", video_file, pose_frame_count)
         return {
             "status": "error",
             "message": "Pose tracking could not be generated from this video.",
@@ -393,18 +468,21 @@ def generate_pose_overlay(
             ],
             "overlay_video_path": saved_path,
             "overlay_video_url": f"/outputs/overlays/{Path(saved_path).name}" if saved_path else None,
+            "overlay_validation": overlay_validation,
             "frames_processed": frames_processed,
             "frames_with_pose": 0,
             "detection_rate": detection_rate,
             "average_confidence": average_confidence,
         }
 
+    LOGGER.info("POSE SUCCESS video=%s pose_frames=%s detections=%s", video_file, pose_frame_count, frames_with_pose)
     return {
         "status": "success",
         "message": "Pose overlay generated successfully.",
         "warnings": [],
         "overlay_video_path": saved_path,
         "overlay_video_url": f"/outputs/overlays/{Path(saved_path).name}" if saved_path else None,
+        "overlay_validation": overlay_validation,
         "frames_processed": frames_processed,
         "frames_with_pose": frames_with_pose,
         "detection_rate": detection_rate,

@@ -10,7 +10,7 @@
       href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}" />
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}?v=20260603" />
   </head>
   <body>
     <div class="page-shell">
@@ -137,6 +137,10 @@
               <pre id="advancedModels" class="output-box"></pre>
             </article>
             <article>
+              <h4>Overlay Validation</h4>
+              <pre id="advancedOverlay" class="output-box"></pre>
+            </article>
+            <article>
               <h4>Debug</h4>
               <pre id="advancedDebug" class="output-box"></pre>
             </article>
@@ -145,6 +149,6 @@
       </section>
     </div>
 
-    <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/dashboard.js') }}?v=20260603"></script>
   </body>
 </html>

@@ -34,11 +34,15 @@ const downloadDocxButton = document.getElementById("downloadDocxButton");
 const advancedMetrics = document.getElementById("advancedMetrics");
 const advancedTracking = document.getElementById("advancedTracking");
 const advancedModels = document.getElementById("advancedModels");
+const advancedOverlay = document.getElementById("advancedOverlay");
 const advancedDebug = document.getElementById("advancedDebug");
 
 state.visualizationMode = "original";
 state.originalVideoUrl = null;
 state.overlayVideoUrl = null;
+state.overlayValidation = null;
+
+wireVideoDebug(analysisPreview, "analysisPreview");
 
 uploadTrigger.addEventListener("click", () => uploadInput.click());
 
@@ -120,10 +124,9 @@ function setVisualizationMode(mode) {
   const nextSource = showOverlay ? state.overlayVideoUrl : state.originalVideoUrl;
 
   if (nextSource) {
+    console.debug("[overlay-debug] video src assigned", { mode, nextSource });
     analysisPreview.srcObject = null;
     analysisPreview.src = nextSource;
-    analysisPreview.currentTime = 0;
-    analysisPreview.load();
   }
 
   originalViewButton.classList.toggle("is-active", !showOverlay);
@@ -316,6 +319,8 @@ function renderResults(result) {
   const visualization = result?.visualization || {};
   const overlayVideoUrl = visualization?.overlay_video_url || overlayFiles.find((item) => /\.(mp4|mov|webm)$/i.test(item)) || null;
   const originalVideoUrl = visualization?.original_video_url || state.originalVideoUrl;
+  const overlayValidation = result?.overlay_validation || result?.debug?.fallback_status?.overlay_validation || null;
+  state.overlayValidation = overlayValidation;
 
   analysisIdValue.textContent = result.analysis_id || "--";
   detectedClubValue.textContent = detectedClub;
@@ -339,13 +344,9 @@ function renderResults(result) {
     downloadOverlayButton.href = "#";
   }
 
-  if (state.overlayVideoUrl) {
-    setVisualizationMode("overlay");
-  } else {
-    setVisualizationMode("original");
-  }
+  setVisualizationMode("original");
   visualizationStatus.textContent = state.overlayVideoUrl
-    ? `Pose overlay ready. Detection rate: ${formatDetectionRate(result?.tracking?.detection_rate)}`
+    ? `Pose overlay ready. Detection rate: ${formatDetectionRate(result?.tracking?.detection_rate)}. Click Pose Overlay to view it.`
     : "Pose tracking could not be generated from this video.";
 
   resultsPanel.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -374,7 +375,65 @@ function renderResults(result) {
     null,
     2,
   );
+  advancedOverlay.textContent = JSON.stringify(
+    {
+      overlay_video_url: state.overlayVideoUrl,
+      overlay_validation: overlayValidation || {},
+      overlay_files,
+    },
+    null,
+    2,
+  );
   advancedDebug.textContent = JSON.stringify(result?.debug || {}, null, 2);
+}
+
+function wireVideoDebug(videoEl, label) {
+  if (!videoEl || videoEl.dataset.debugWired === "true") {
+    return;
+  }
+  videoEl.dataset.debugWired = "true";
+
+  const logEvent = (eventName) => {
+    const error = videoEl.error;
+    console.debug(`[overlay-debug] ${label}:${eventName}`, {
+      src: videoEl.currentSrc || videoEl.src,
+      readyState: videoEl.readyState,
+      networkState: videoEl.networkState,
+      currentTime: videoEl.currentTime,
+      duration: videoEl.duration,
+      paused: videoEl.paused,
+      errorCode: error ? error.code : null,
+      errorMessage: error ? error.message || null : null,
+    });
+    if (eventName === "error") {
+      const message = describeVideoError(error);
+      visualizationStatus.textContent = `Overlay video failed to load. ${message}`;
+      console.error("[overlay-debug] video error", {
+        label,
+        src: videoEl.currentSrc || videoEl.src,
+        errorCode: error ? error.code : null,
+        errorMessage: error ? error.message || null : null,
+        overlayValidation: state.overlayValidation,
+      });
+    }
+  };
+
+  ["loadstart", "loadedmetadata", "loadeddata", "canplay", "playing", "waiting", "stalled", "emptied", "error", "ended"].forEach((eventName) => {
+    videoEl.addEventListener(eventName, () => logEvent(eventName));
+  });
+}
+
+function describeVideoError(error) {
+  if (!error) {
+    return "No MediaError details were reported.";
+  }
+  const descriptions = {
+    1: "The playback was aborted.",
+    2: "The overlay file could not be loaded.",
+    3: "The overlay video decode failed.",
+    4: "The browser does not support this overlay format.",
+  };
+  return descriptions[error.code] || "The browser reported a video loading error.";
 }
 
 function renderFeedbackSection(listEl, items) {
