@@ -736,10 +736,13 @@ class ModelManager:
             "lower_body_debug_video_url": overlay_result.get("lower_body_debug_video_url"),
             "hand_tracking_debug_video_path": overlay_result.get("hand_tracking_debug_video_path"),
             "hand_tracking_debug_video_url": overlay_result.get("hand_tracking_debug_video_url"),
+            "hand_background_debug_video_path": overlay_result.get("hand_background_debug_video_path"),
+            "hand_background_debug_video_url": overlay_result.get("hand_background_debug_video_url"),
             "raw_pose_landmarks_csv": overlay_result.get("raw_pose_landmarks_csv"),
             "corrected_pose_landmarks_csv": overlay_result.get("corrected_pose_landmarks_csv"),
             "lower_body_tracking_debug_csv": overlay_result.get("lower_body_tracking_debug_csv"),
             "hand_tracking_debug_csv": overlay_result.get("hand_tracking_debug_csv"),
+            "hand_background_debug_csv": overlay_result.get("hand_background_debug_csv"),
         }
         tracking.update(
             {
@@ -772,10 +775,12 @@ class ModelManager:
                 "tracking_debug_video_url": overlay_result.get("tracking_debug_video_url"),
                 "lower_body_debug_video_url": overlay_result.get("lower_body_debug_video_url"),
                 "hand_tracking_debug_video_url": overlay_result.get("hand_tracking_debug_video_url"),
+                "hand_background_debug_video_url": overlay_result.get("hand_background_debug_video_url"),
                 "raw_pose_landmarks_csv": overlay_result.get("raw_pose_landmarks_csv"),
                 "corrected_pose_landmarks_csv": overlay_result.get("corrected_pose_landmarks_csv"),
                 "lower_body_tracking_debug_csv": overlay_result.get("lower_body_tracking_debug_csv"),
                 "hand_tracking_debug_csv": overlay_result.get("hand_tracking_debug_csv"),
+                "hand_background_debug_csv": overlay_result.get("hand_background_debug_csv"),
             },
             "file_paths": {
                 "video_path": str(video_file),
@@ -789,6 +794,8 @@ class ModelManager:
                 "lower_body_debug_video_path": overlay_result.get("lower_body_debug_video_path"),
                 "hand_tracking_debug_csv": overlay_result.get("hand_tracking_debug_csv"),
                 "hand_tracking_debug_video_path": overlay_result.get("hand_tracking_debug_video_path"),
+                "hand_background_debug_csv": overlay_result.get("hand_background_debug_csv"),
+                "hand_background_debug_video_path": overlay_result.get("hand_background_debug_video_path"),
             },
         }
 
@@ -812,11 +819,13 @@ class ModelManager:
                 "overlay_available": bool(overlay_video_url),
                 "overlay_variants": overlay_variants,
                 "hand_tracking_debug_video_url": overlay_result.get("hand_tracking_debug_video_url"),
+                "hand_background_debug_video_url": overlay_result.get("hand_background_debug_video_url"),
                 "lower_body_debug_video_url": overlay_result.get("lower_body_debug_video_url"),
                 "raw_pose_landmarks_csv": overlay_result.get("raw_pose_landmarks_csv"),
                 "corrected_pose_landmarks_csv": overlay_result.get("corrected_pose_landmarks_csv"),
                 "lower_body_tracking_debug_csv": overlay_result.get("lower_body_tracking_debug_csv"),
                 "hand_tracking_debug_csv": overlay_result.get("hand_tracking_debug_csv"),
+                "hand_background_debug_csv": overlay_result.get("hand_background_debug_csv"),
                 "raw_overlay_video_url": overlay_variants.get("raw", {}).get("overlay_video_url"),
                 "smoothed_overlay_video_url": overlay_variants.get("smoothed", {}).get("overlay_video_url"),
             },

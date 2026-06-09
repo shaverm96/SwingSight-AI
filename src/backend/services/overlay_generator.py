@@ -448,12 +448,56 @@ def _log_point_triplet(prefix: str, point: tuple[int, int, float] | None) -> dic
     }
 
 
+def _debug_row_to_points(debug_row: Dict[str, Any], prefix: str) -> Dict[str, tuple[int, int, float]]:
+    points: Dict[str, tuple[int, int, float]] = {}
+    for side in ("left", "right"):
+        for part in ("wrist", "elbow", "shoulder"):
+            x = debug_row.get(f"{prefix}_{side}_{part}_x")
+            y = debug_row.get(f"{prefix}_{side}_{part}_y")
+            confidence = debug_row.get(f"{prefix}_{side}_{part}_confidence")
+            if x is None or y is None:
+                continue
+            points[f"{side}_{part}"] = (int(x), int(y), float(confidence or 0.0))
+    return points
+
+
+def _person_bbox_from_points(points: Dict[str, tuple[int, int, float]], width: int, height: int) -> tuple[int, int, int, int] | None:
+    coords: list[tuple[int, int]] = []
+    for name, point in points.items():
+        if name in HAND_LANDMARK_NAMES or point is None:
+            continue
+        coords.append((int(point[0]), int(point[1])))
+    if not coords:
+        return None
+
+    xs = [value[0] for value in coords]
+    ys = [value[1] for value in coords]
+    margin_x = max(16, int(round(width * 0.08)))
+    margin_y = max(16, int(round(height * 0.10)))
+    left = max(0, min(xs) - margin_x)
+    top = max(0, min(ys) - margin_y)
+    right = min(width - 1, max(xs) + margin_x)
+    bottom = min(height - 1, max(ys) + margin_y)
+    if right <= left or bottom <= top:
+        return None
+    return left, top, right, bottom
+
+
+def _point_inside_bbox(point: tuple[int, int, float] | None, bbox: tuple[int, int, int, int] | None, *, margin_px: float = 0.0) -> bool:
+    if point is None or bbox is None:
+        return True
+    left, top, right, bottom = bbox
+    x, y = point[:2]
+    return (left - margin_px) <= x <= (right + margin_px) and (top - margin_px) <= y <= (bottom + margin_px)
+
+
 def _refresh_stale_hand_tracking(
     current_points: Dict[str, tuple[int, int, float]],
     raw_points: Dict[str, tuple[int, int, float]],
     previous_points: Dict[str, tuple[int, int, float]],
     stale_state: Dict[str, int],
     *,
+    person_bbox: tuple[int, int, int, int] | None,
     width: int,
     height: int,
     confidence_threshold: float,
@@ -462,8 +506,11 @@ def _refresh_stale_hand_tracking(
     stale_corrections = 0
     debug_flags: Dict[str, Any] = {
         "stale_hand_tracking": False,
+        "stale_background_detected": False,
         "left_stale_hand_tracking": False,
         "right_stale_hand_tracking": False,
+        "left_stale_background_detected": False,
+        "right_stale_background_detected": False,
         "left_stale_hand_reason": None,
         "right_stale_hand_reason": None,
     }
@@ -493,8 +540,11 @@ def _refresh_stale_hand_tracking(
         shoulder_motion = _point_distance(current_shoulder, previous_shoulder) if previous_shoulder is not None else 0.0
         arm_motion = max(elbow_motion, shoulder_motion) >= arm_motion_threshold
         raw_changed = raw_wrist is not None and _point_distance(raw_wrist, previous_wrist) > wrist_hold_threshold
+        wrist_inside_person = _point_inside_bbox(current_wrist, person_bbox, margin_px=max(10.0, wrist_hold_threshold * 2.0))
+        raw_inside_person = _point_inside_bbox(raw_wrist, person_bbox, margin_px=max(10.0, wrist_hold_threshold * 2.0))
+        background_stuck = wrist_hold and arm_motion and (not wrist_inside_person or not raw_changed or not raw_inside_person)
 
-        if wrist_hold and arm_motion and raw_changed:
+        if background_stuck:
             stale_state[side] += 1
         else:
             stale_state[side] = 0
@@ -504,14 +554,17 @@ def _refresh_stale_hand_tracking(
 
         replacement = None
         reason = ""
-        if raw_wrist is not None and raw_wrist[2] >= refresh_confidence_threshold:
+        if raw_wrist is not None and raw_wrist[2] >= refresh_confidence_threshold and raw_inside_person:
             replacement = raw_wrist
             reason = "raw_refresh"
-        elif previous_wrist is not None:
-            replacement = previous_wrist
-            reason = "previous_refresh"
 
         if replacement is None:
+            refreshed.pop(wrist_name, None)
+            debug_flags["stale_background_detected"] = True
+            debug_flags[f"{side}_stale_background_detected"] = True
+            debug_flags[f"{side}_stale_hand_reason"] = "background_stuck"
+            stale_state[side] = 0
+            stale_corrections += 1
             continue
 
         refreshed[wrist_name] = replacement
@@ -759,6 +812,7 @@ def _score_hand_candidate(
     width: int,
     height: int,
     confidence_threshold: float,
+    person_bbox: tuple[int, int, int, int] | None = None,
 ) -> tuple[float, bool, list[str]]:
     required = {"left_shoulder", "right_shoulder", "left_elbow", "right_elbow", "left_wrist", "right_wrist"}
     missing = [name for name in required if points.get(name) is None]
@@ -806,6 +860,15 @@ def _score_hand_candidate(
             score += reference * 0.9
             reasons.append(f"{side}_wrist_closer_to_opposite_elbow")
 
+        if not _point_inside_bbox(wrist, person_bbox, margin_px=max(12.0, reference * 0.10)):
+            valid = False
+            score += reference * 3.2
+            reasons.append(f"{side}_wrist_outside_person_bbox")
+
+        if not _point_inside_bbox(elbow, person_bbox, margin_px=max(20.0, reference * 0.12)):
+            score += reference * 1.1
+            reasons.append(f"{side}_elbow_outside_person_bbox")
+
         if wrist_jump:
             score += _distance_score(wrist, previous_wrist) * 1.6
             reasons.append(f"{side}_wrist_teleport")
@@ -852,8 +915,16 @@ def _build_hand_frame_log(
         "stale_hand_tracking": bool(stale_corrected or stale_flags.get("stale_hand_tracking", False)),
         "left_stale_hand_tracking": bool(stale_flags.get("left_stale_hand_tracking", False)),
         "right_stale_hand_tracking": bool(stale_flags.get("right_stale_hand_tracking", False)),
+        "stale_background_detected": bool(stale_flags.get("stale_background_detected", False)),
+        "left_stale_background_detected": bool(stale_flags.get("left_stale_background_detected", False)),
+        "right_stale_background_detected": bool(stale_flags.get("right_stale_background_detected", False)),
         "left_stale_hand_reason": stale_flags.get("left_stale_hand_reason"),
         "right_stale_hand_reason": stale_flags.get("right_stale_hand_reason"),
+        "left_wrist_accepted": bool(final_points.get("left_wrist") is not None),
+        "right_wrist_accepted": bool(final_points.get("right_wrist") is not None),
+        "left_wrist_rejection_reason": stale_flags.get("left_stale_hand_reason") or ("rejected" if raw_points.get("left_wrist") is None and final_points.get("left_wrist") is None else None),
+        "right_wrist_rejection_reason": stale_flags.get("right_stale_hand_reason") or ("rejected" if raw_points.get("right_wrist") is None and final_points.get("right_wrist") is None else None),
+        "interpolation_used": bool(used_previous),
         "source_reason": source_reason,
         "correction_reason": correction_reason,
         **_log_point_triplet("raw_left_wrist", raw_points.get("left_wrist")),
@@ -935,6 +1006,7 @@ def _resolve_hand_assignment(
     width: int,
     height: int,
     confidence_threshold: float,
+    person_bbox: tuple[int, int, int, int] | None = None,
 ) -> tuple[Dict[str, tuple[int, int, float]], Dict[str, Any]]:
     resolved = dict(frame_points)
     hand_swap_corrections = 0
@@ -951,6 +1023,7 @@ def _resolve_hand_assignment(
         width=width,
         height=height,
         confidence_threshold=confidence_threshold,
+        person_bbox=person_bbox,
     )
     swapped_score, swapped_valid, swapped_reasons = _score_hand_candidate(
         swapped_candidate,
@@ -958,6 +1031,7 @@ def _resolve_hand_assignment(
         width=width,
         height=height,
         confidence_threshold=confidence_threshold,
+        person_bbox=person_bbox,
     )
 
     selected_assignment = "A"
@@ -989,33 +1063,11 @@ def _resolve_hand_assignment(
         elbow_point = selected_candidate.get(elbow_name)
         shoulder_point = selected_candidate.get(shoulder_name)
         previous_wrist = previous_points.get(wrist_name)
+        wrist_inside_person = _point_inside_bbox(wrist_point, person_bbox, margin_px=max(10.0, width * 0.02))
 
-        if wrist_point is None or wrist_point[2] < confidence_threshold or elbow_point is None or shoulder_point is None:
+        if wrist_point is None or wrist_point[2] < confidence_threshold or elbow_point is None or shoulder_point is None or not wrist_inside_person:
             if previous_wrist is not None and previous_wrist[2] >= max(0.2, confidence_threshold * 0.75):
-                selected_candidate[wrist_name] = previous_wrist
-                used_previous = True
-                hand_interpolations += 1
-                selected_reasons.append(f"{side}_wrist_previous_frame")
-                if side == "left":
-                    left_used_previous = True
-                else:
-                    right_used_previous = True
-            else:
-                selected_candidate.pop(wrist_name, None)
-                rejected = True
-                hand_rejections += 1
-                if side == "left":
-                    left_rejected = True
-                else:
-                    right_rejected = True
-        else:
-            jump_threshold = max(50.0, min(width, height) * 0.16)
-            wrist_jump = previous_wrist is not None and detect_unrealistic_jump(previous_wrist, wrist_point, threshold_px=jump_threshold)
-            arm_total = _distance_score(shoulder_point, elbow_point) + _distance_score(elbow_point, wrist_point)
-            arm_geometry_reasonable = hand_reference * 0.45 <= arm_total <= hand_reference * 2.1 and _distance_score(wrist_point, elbow_point) <= hand_reference * 1.5
-
-            if wrist_jump and not arm_geometry_reasonable:
-                if previous_wrist is not None and previous_wrist[2] >= max(0.2, confidence_threshold * 0.75):
+                if _point_inside_bbox(previous_wrist, person_bbox, margin_px=max(10.0, width * 0.02)):
                     selected_candidate[wrist_name] = previous_wrist
                     used_previous = True
                     hand_interpolations += 1
@@ -1028,6 +1080,36 @@ def _resolve_hand_assignment(
                     selected_candidate.pop(wrist_name, None)
                     rejected = True
                     hand_rejections += 1
+                    selected_reasons.append(f"{side}_wrist_outside_person_bbox")
+            else:
+                selected_candidate.pop(wrist_name, None)
+                rejected = True
+                hand_rejections += 1
+                if side == "left":
+                    left_rejected = True
+                else:
+                    right_rejected = True
+        else:
+            jump_threshold = max(50.0, min(width, height) * 0.16)
+            wrist_jump = previous_wrist is not None and detect_unrealistic_jump(previous_wrist, wrist_point, threshold_px=jump_threshold)
+            arm_total = _distance_score(shoulder_point, elbow_point) + _distance_score(elbow_point, wrist_point)
+            arm_geometry_reasonable = hand_reference * 0.45 <= arm_total <= hand_reference * 2.1 and _distance_score(wrist_point, elbow_point) <= hand_reference * 1.5 and wrist_inside_person
+
+            if wrist_jump and not arm_geometry_reasonable:
+                if previous_wrist is not None and previous_wrist[2] >= max(0.2, confidence_threshold * 0.75) and _point_inside_bbox(previous_wrist, person_bbox, margin_px=max(10.0, width * 0.02)):
+                    selected_candidate[wrist_name] = previous_wrist
+                    used_previous = True
+                    hand_interpolations += 1
+                    selected_reasons.append(f"{side}_wrist_previous_frame")
+                    if side == "left":
+                        left_used_previous = True
+                    else:
+                        right_used_previous = True
+                else:
+                    selected_candidate.pop(wrist_name, None)
+                    rejected = True
+                    hand_rejections += 1
+                    selected_reasons.append(f"{side}_wrist_background_stuck")
                     if side == "left":
                         left_rejected = True
                     else:
@@ -1042,7 +1124,7 @@ def _resolve_hand_assignment(
                         left_rejected = True
                     else:
                         right_rejected = True
-            elif previous_wrist is not None and wrist_point[2] < confidence_threshold * 0.85:
+            elif previous_wrist is not None and wrist_point[2] < confidence_threshold * 0.85 and _point_inside_bbox(previous_wrist, person_bbox, margin_px=max(10.0, width * 0.02)):
                 selected_candidate[wrist_name] = previous_wrist
                 used_previous = True
                 hand_interpolations += 1
@@ -1351,6 +1433,8 @@ def _stabilize_key_landmarks(
 
     stabilized = dict(current_points)
     for landmark_name in KEY_LANDMARKS:
+        if landmark_name in HAND_LANDMARK_NAMES:
+            continue
         if landmark_name not in stabilized and landmark_name in previous_points:
             stabilized[landmark_name] = previous_points[landmark_name]
     return stabilized
@@ -1457,6 +1541,7 @@ def _build_dense_pose_series(
         corrections["lower_body_rejections"] += int(lower_body_summary.get("lower_body_rejections", 0))
         corrections["lower_body_interpolations"] += int(lower_body_summary.get("lower_body_interpolations", 0))
         lower_body_debug = dict(lower_body_summary.get("debug_record", {}))
+        person_bbox = _person_bbox_from_points(lower_body_resolved, width, height)
 
         debug_rows.append(
             _build_lower_body_frame_log(
@@ -1480,6 +1565,7 @@ def _build_dense_pose_series(
             width=width,
             height=height,
             confidence_threshold=confidence_threshold,
+            person_bbox=person_bbox,
         )
         corrections["hand_swap_corrections"] += int(hand_summary.get("hand_swap_corrections", 0))
         corrections["hand_rejections"] += int(hand_summary.get("hand_rejections", 0))
@@ -1542,6 +1628,7 @@ def _build_dense_pose_series(
                 source_points,
                 previous_valid,
                 hand_stale_state,
+                person_bbox=person_bbox,
                 width=width,
                 height=height,
                 confidence_threshold=confidence_threshold,
@@ -1922,12 +2009,13 @@ def generate_pose_overlay(
             )
             lower_body_debug_frames.append(lower_body_debug_frame)
 
+            hand_debug_row = hand_debug_rows[frame_index] if frame_index < len(hand_debug_rows) else {}
             hand_debug_frame = _draw_hand_debug_overlay(
                 frame,
-                source_points,
-                smoothed_points,
-                corrected_points,
-                hand_debug_rows[frame_index] if frame_index < len(hand_debug_rows) else {},
+                _debug_row_to_points(hand_debug_row, "raw"),
+                _debug_row_to_points(hand_debug_row, "smoothed"),
+                _debug_row_to_points(hand_debug_row, "final"),
+                hand_debug_row,
             )
             hand_debug_frames.append(hand_debug_frame)
 
@@ -1967,6 +2055,8 @@ def generate_pose_overlay(
     corrected_pose_csv_path = overlay_root / f"{video_file.stem}_corrected_pose_landmarks.csv"
     lower_body_debug_csv_path = overlay_root / f"{video_file.stem}_lower_body_tracking_debug.csv"
     hand_debug_csv_path = overlay_root / f"{video_file.stem}_hand_tracking_debug.csv"
+    experiments_root = ensure_dir(overlay_root.parent / "experiments")
+    hand_tracking_experiments_csv_path = experiments_root / "hand_tracking_debug.csv"
 
     raw_rows: list[Dict[str, Any]] = []
     for pose_frame in pose_frames:
@@ -2004,6 +2094,25 @@ def generate_pose_overlay(
         pd.DataFrame(lower_body_debug_rows).to_csv(lower_body_debug_csv_path, index=False)
     if hand_debug_rows:
         pd.DataFrame(hand_debug_rows).to_csv(hand_debug_csv_path, index=False)
+        tracking_debug_rows = [
+            {
+                "frame_number": row.get("frame_number"),
+                "left_wrist_raw_x": row.get("raw_left_wrist_x"),
+                "left_wrist_raw_y": row.get("raw_left_wrist_y"),
+                "right_wrist_raw_x": row.get("raw_right_wrist_x"),
+                "right_wrist_raw_y": row.get("raw_right_wrist_y"),
+                "left_wrist_confidence": row.get("raw_left_wrist_confidence"),
+                "right_wrist_confidence": row.get("raw_right_wrist_confidence"),
+                "left_wrist_accepted": row.get("left_wrist_accepted"),
+                "right_wrist_accepted": row.get("right_wrist_accepted"),
+                "left_wrist_rejection_reason": row.get("left_wrist_rejection_reason"),
+                "right_wrist_rejection_reason": row.get("right_wrist_rejection_reason"),
+                "stale_background_detected": row.get("stale_background_detected"),
+                "interpolation_used": row.get("interpolation_used"),
+            }
+            for row in hand_debug_rows
+        ]
+        pd.DataFrame(tracking_debug_rows).to_csv(hand_tracking_experiments_csv_path, index=False)
 
     saved_path = save_overlay_video(rendered_frames, overlay_path, fps, frame_size)
     overlay_validation = validate_overlay_video(saved_path, video_file)
@@ -2013,6 +2122,8 @@ def generate_pose_overlay(
     lower_body_debug_video_url = None
     hand_debug_video_path = None
     hand_debug_video_url = None
+    hand_background_debug_video_path = None
+    hand_background_debug_video_url = None
     if tracking_debug_frames:
         tracking_debug_path = overlay_root / f"{video_file.stem}_tracking_debug.mp4"
         tracking_debug_video_path = save_overlay_video(tracking_debug_frames, tracking_debug_path, fps, frame_size)
@@ -2025,6 +2136,9 @@ def generate_pose_overlay(
         hand_debug_path = overlay_root / "hand_tracking_debug.mp4"
         hand_debug_video_path = save_overlay_video(hand_debug_frames, hand_debug_path, fps, frame_size)
         hand_debug_video_url = f"/outputs/overlays/{Path(hand_debug_video_path).name}"
+        hand_background_debug_path = overlay_root / "hand_background_debug.mp4"
+        hand_background_debug_video_path = save_overlay_video(hand_debug_frames, hand_background_debug_path, fps, frame_size)
+        hand_background_debug_video_url = f"/outputs/overlays/{Path(hand_background_debug_video_path).name}"
     LOGGER.info(
         "OVERLAY VIDEO CREATED path=%s size_mb=%s frames=%s",
         saved_path,
@@ -2035,17 +2149,22 @@ def generate_pose_overlay(
     detection_rate = round((frames_with_pose / frames_processed) * 100.0, 2) if frames_processed else None
     average_confidence = round(float(np.mean(confidence_values)), 3) if confidence_values else None
     average_pose_quality = round(float(np.mean(pose_quality_values)), 2) if pose_quality_values else 0.0
-    left_hand_confidence = round(float(np.mean([point[2] for frame in dense_series.values() if (point := frame.get("left_wrist")) is not None])), 3) if dense_series else None
-    right_hand_confidence = round(float(np.mean([point[2] for frame in dense_series.values() if (point := frame.get("right_wrist")) is not None])), 3) if dense_series else None
-    left_hand_tracking_rate = round((left_hand_tracked_frames / frames_processed) * 100.0, 2) if frames_processed else None
-    right_hand_tracking_rate = round((right_hand_tracked_frames / frames_processed) * 100.0, 2) if frames_processed else None
+    left_hand_points = [point for frame in dense_series.values() if (point := frame.get("left_wrist")) is not None]
+    right_hand_points = [point for frame in dense_series.values() if (point := frame.get("right_wrist")) is not None]
+    left_hand_confidence = round(float(np.mean([point[2] for point in left_hand_points])), 3) if left_hand_points else None
+    right_hand_confidence = round(float(np.mean([point[2] for point in right_hand_points])), 3) if right_hand_points else None
+    left_hand_tracking_rate = round((sum(1 for point in left_hand_points if point[2] >= 0.5) / frames_processed) * 100.0, 2) if frames_processed else None
+    right_hand_tracking_rate = round((sum(1 for point in right_hand_points if point[2] >= 0.5) / frames_processed) * 100.0, 2) if frames_processed else None
+    frames_with_missing_wrist_detection = sum(1 for row in hand_debug_rows if row.get("raw_left_wrist_x") is None or row.get("raw_right_wrist_x") is None)
+    left_wrist_missing_frames = sum(1 for row in hand_debug_rows if row.get("raw_left_wrist_x") is None)
+    right_wrist_missing_frames = sum(1 for row in hand_debug_rows if row.get("raw_right_wrist_x") is None)
     quality_metrics = {
         "frames_processed": frames_processed,
         "frames_with_pose": frames_with_pose,
         "frames_interpolated": dense_metrics.get("frames_interpolated", 0),
         "frames_rejected": dense_metrics.get("frames_rejected", 0),
         "frames_missing": dense_metrics.get("frames_missing", 0),
-        "frames_with_missing_wrist_detection": corrections.get("frames_with_missing_wrist_detection", 0),
+        "frames_with_missing_wrist_detection": frames_with_missing_wrist_detection,
         "head_tracked_frames": head_tracked_frames,
         "ankle_corrections": correction_metrics.get("ankle_corrections", 0),
         "swap_corrections": correction_metrics.get("swap_corrections", 0),
@@ -2057,6 +2176,7 @@ def generate_pose_overlay(
         "hand_rejections": correction_metrics.get("hand_rejections", 0),
         "hand_interpolations": correction_metrics.get("hand_interpolations", 0),
         "stale_hand_corrections": correction_metrics.get("stale_hand_corrections", 0),
+        "stale_background_detected": bool(sum(1 for row in hand_debug_rows if row.get("stale_background_detected"))),
         "debug_frame_count": len(debug_frame_paths),
         "head_tracked_rate": round((head_tracked_frames / frames_processed) * 100.0, 2) if frames_processed else None,
         "hands_tracked_frames": hands_tracked_frames,
@@ -2120,6 +2240,12 @@ def generate_pose_overlay(
         "hand_tracking_debug_video_path": hand_debug_video_path,
         "hand_tracking_debug_video_url": hand_debug_video_url,
         "hand_tracking_debug_csv": str(hand_debug_csv_path) if hand_debug_csv_path.exists() else None,
+        "hand_background_debug_csv": str(hand_tracking_experiments_csv_path) if hand_tracking_experiments_csv_path.exists() else None,
+        "hand_background_debug_video_path": hand_background_debug_video_path,
+        "hand_background_debug_video_url": hand_background_debug_video_url,
+        "hand_background_debug_video_path": hand_background_debug_video_path,
+        "hand_background_debug_video_url": hand_background_debug_video_url,
+        "hand_background_debug_csv": str(hand_tracking_experiments_csv_path) if hand_tracking_experiments_csv_path.exists() else None,
         "frames_processed": frames_processed,
         "frames_with_pose": frames_with_pose,
         "detection_rate": detection_rate,
