@@ -27,3 +27,19 @@ Missing model artifact for swing_classifier
 127.0.0.1 - - [09/Jun/2026 18:13:54] "[35m[1mGET /outputs/overlays/video_c134df471a074c3d859f587781666725_overlay_smoothed.mp4 HTTP/1.1[0m" 206 -
 [2026-06-09 18:13:54,790] INFO in dashboard: API SERVING overlay file path=/Users/mattshaver/Desktop/SwingSight-AI/outputs/overlays/video_c134df471a074c3d859f587781666725_overlay_smoothed.mp4 mimetype=video/mp4
 127.0.0.1 - - [09/Jun/2026 18:13:54] "[35m[1mGET /outputs/overlays/video_c134df471a074c3d859f587781666725_overlay_smoothed.mp4 HTTP/1.1[0m" 206 -
+ * Detected change in '/Users/mattshaver/Desktop/SwingSight-AI/src/swingsight/metrics.py', reloading
+ * Restarting with stat
+Missing model artifact for club_classifier
+Missing model artifact for club_detector
+Missing model artifact for swing_classifier
+ * Debugger is active!
+ * Debugger PIN: 451-629-467
+ * Detected change in '/Users/mattshaver/Desktop/SwingSight-AI/src/swingsight/metrics.py', reloading
+ * Restarting with stat
+Missing model artifact for club_classifier
+Missing model artifact for club_detector
+Missing model artifact for swing_classifier
+ * Debugger is active!
+ * Debugger PIN: 451-629-467
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/multiprocessing/resource_tracker.py:400: UserWarning: resource_tracker: There appear to be 1 leaked semaphore objects to clean up at shutdown: {'/loky-66145-b6776z_n'}
+  warnings.warn(

@@ -645,6 +645,10 @@ class ModelManager:
                 "corrected_pose_landmarks_csv": overlay_result.get("corrected_pose_landmarks_csv"),
                 "lower_body_tracking_debug_csv": overlay_result.get("lower_body_tracking_debug_csv"),
                 "hand_tracking_debug_csv": overlay_result.get("hand_tracking_debug_csv"),
+                "body_landmark_coordinates_csv": overlay_result.get("body_landmark_coordinates_csv"),
+                "body_landmark_coordinates_csv_url": overlay_result.get("body_landmark_coordinates_csv_url"),
+                "body_landmark_coordinates_wide_csv": overlay_result.get("body_landmark_coordinates_wide_csv"),
+                "body_landmark_coordinates_wide_csv_url": overlay_result.get("body_landmark_coordinates_wide_csv_url"),
                 "overlay_validation": overlay_validation,
                 "status": overlay_result.get("status"),
                 "message": overlay_result.get("message"),
@@ -740,6 +744,10 @@ class ModelManager:
             "hand_background_debug_video_url": overlay_result.get("hand_background_debug_video_url"),
             "wrist_tracking_debug_video_path": overlay_result.get("wrist_tracking_debug_video_path"),
             "wrist_tracking_debug_video_url": overlay_result.get("wrist_tracking_debug_video_url"),
+            "body_landmark_coordinates_csv": overlay_result.get("body_landmark_coordinates_csv"),
+            "body_landmark_coordinates_csv_url": overlay_result.get("body_landmark_coordinates_csv_url"),
+            "body_landmark_coordinates_wide_csv": overlay_result.get("body_landmark_coordinates_wide_csv"),
+            "body_landmark_coordinates_wide_csv_url": overlay_result.get("body_landmark_coordinates_wide_csv_url"),
             "raw_pose_landmarks_csv": overlay_result.get("raw_pose_landmarks_csv"),
             "corrected_pose_landmarks_csv": overlay_result.get("corrected_pose_landmarks_csv"),
             "lower_body_tracking_debug_csv": overlay_result.get("lower_body_tracking_debug_csv"),
@@ -749,6 +757,9 @@ class ModelManager:
         }
         tracking.update(
             {
+                "total_frames_processed": tracking["quality_metrics"].get("total_frames_processed"),
+                "landmarks_tracked": tracking["quality_metrics"].get("landmarks_tracked"),
+                "body_part_tracking_rates": tracking["quality_metrics"].get("body_part_tracking_rates", {}),
                 "head_tracked_rate": tracking["quality_metrics"].get("head_tracked_rate"),
                 "hands_tracked_rate": tracking["quality_metrics"].get("hands_tracked_rate"),
                 "feet_tracked_rate": tracking["quality_metrics"].get("feet_tracked_rate"),
@@ -800,6 +811,10 @@ class ModelManager:
                 "hand_tracking_debug_video_path": overlay_result.get("hand_tracking_debug_video_path"),
                 "hand_background_debug_csv": overlay_result.get("hand_background_debug_csv"),
                 "hand_background_debug_video_path": overlay_result.get("hand_background_debug_video_path"),
+                "body_landmark_coordinates_csv": overlay_result.get("body_landmark_coordinates_csv"),
+                "body_landmark_coordinates_csv_url": overlay_result.get("body_landmark_coordinates_csv_url"),
+                "body_landmark_coordinates_wide_csv": overlay_result.get("body_landmark_coordinates_wide_csv"),
+                "body_landmark_coordinates_wide_csv_url": overlay_result.get("body_landmark_coordinates_wide_csv_url"),
             },
         }
 
@@ -825,6 +840,8 @@ class ModelManager:
                 "hand_tracking_debug_video_url": overlay_result.get("hand_tracking_debug_video_url"),
                 "hand_background_debug_video_url": overlay_result.get("hand_background_debug_video_url"),
                 "wrist_tracking_debug_video_url": overlay_result.get("wrist_tracking_debug_video_url"),
+                "body_landmark_coordinates_csv_url": overlay_result.get("body_landmark_coordinates_csv_url"),
+                "body_landmark_coordinates_wide_csv_url": overlay_result.get("body_landmark_coordinates_wide_csv_url"),
                 "lower_body_debug_video_url": overlay_result.get("lower_body_debug_video_url"),
                 "raw_pose_landmarks_csv": overlay_result.get("raw_pose_landmarks_csv"),
                 "corrected_pose_landmarks_csv": overlay_result.get("corrected_pose_landmarks_csv"),

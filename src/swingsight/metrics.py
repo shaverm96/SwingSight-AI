@@ -166,10 +166,138 @@ def compute_frame_metrics(landmarks: Dict[str, Dict]) -> Dict[str, float]:
     }
 
 
+def _point_from_frame(frame: Dict, name: str) -> Optional[List[float]]:
+    landmarks = frame.get("landmarks", {}) or {}
+    point = get_point(landmarks, name)
+    return point
+
+
+def _mean_distance(points: List[Optional[List[float]]]) -> Optional[float]:
+    valid_points = [point for point in points if point is not None]
+    if len(valid_points) < 2:
+        return None
+    reference = valid_points[0]
+    distances = [math.hypot(point[0] - reference[0], point[1] - reference[1]) for point in valid_points[1:]]
+    return float(np.mean(distances)) if distances else None
+
+
+def _path_length(points: List[Optional[List[float]]]) -> Optional[float]:
+    valid_points = [point for point in points if point is not None]
+    if len(valid_points) < 2:
+        return None
+    steps = [math.hypot(curr[0] - prev[0], curr[1] - prev[1]) for prev, curr in zip(valid_points, valid_points[1:])]
+    return float(sum(steps)) if steps else None
+
+
+def _mean_angle_deviation(angles: List[Optional[float]]) -> Optional[float]:
+    valid_angles = [angle for angle in angles if angle is not None]
+    if len(valid_angles) < 2:
+        return None
+    reference = valid_angles[0]
+    return float(np.mean([abs(angle - reference) for angle in valid_angles[1:]]))
+
+
+def compute_coordinate_movement_metrics(frames: List[Dict]) -> Dict[str, float]:
+    if not frames:
+        return {
+            "head_movement_px": None,
+            "hip_movement_px": None,
+            "shoulder_turn_deg": None,
+            "knee_movement_px": None,
+            "foot_stability_px": None,
+            "hand_path_px": None,
+            "spine_angle_deg": None,
+            "posture_changes": None,
+        }
+
+    head_points = [_point_from_frame(frame, "nose") for frame in frames]
+    neck_points = [_point_from_frame(frame, "neck") for frame in frames]
+    left_shoulder_points = [_point_from_frame(frame, "left_shoulder") for frame in frames]
+    right_shoulder_points = [_point_from_frame(frame, "right_shoulder") for frame in frames]
+    left_hip_points = [_point_from_frame(frame, "left_hip") for frame in frames]
+    right_hip_points = [_point_from_frame(frame, "right_hip") for frame in frames]
+    left_knee_points = [_point_from_frame(frame, "left_knee") for frame in frames]
+    right_knee_points = [_point_from_frame(frame, "right_knee") for frame in frames]
+    left_ankle_points = [_point_from_frame(frame, "left_ankle") for frame in frames]
+    right_ankle_points = [_point_from_frame(frame, "right_ankle") for frame in frames]
+    left_wrist_points = [_point_from_frame(frame, "left_wrist") for frame in frames]
+    right_wrist_points = [_point_from_frame(frame, "right_wrist") for frame in frames]
+
+    spine_angles = []
+    shoulder_turns = []
+    posture_changes = 0
+    previous_spine_angle: Optional[float] = None
+
+    for frame in frames:
+        landmarks = frame.get("landmarks", {}) or {}
+        left_hip = get_point(landmarks, "left_hip")
+        right_hip = get_point(landmarks, "right_hip")
+        left_shoulder = get_point(landmarks, "left_shoulder")
+        right_shoulder = get_point(landmarks, "right_shoulder")
+        if left_hip and right_hip and left_shoulder and right_shoulder:
+            mid_hip = mid_point(left_hip, right_hip)
+            mid_shoulder = mid_point(left_shoulder, right_shoulder)
+            spine_angle = line_angle(mid_hip, mid_shoulder)
+            spine_angles.append(spine_angle)
+            if previous_spine_angle is not None and abs(spine_angle - previous_spine_angle) >= 5.0:
+                posture_changes += 1
+            previous_spine_angle = spine_angle
+
+        if left_shoulder and right_shoulder:
+            shoulder_turns.append(line_angle(left_shoulder, right_shoulder))
+
+    head_movement_px = _mean_distance(head_points)
+    hip_movement_px = _mean_distance([
+        mid_point(left, right)
+        for left, right in zip(left_hip_points, right_hip_points)
+        if left is not None and right is not None
+    ])
+    shoulder_turn_deg = _mean_angle_deviation(shoulder_turns)
+    knee_movement_px = _mean_distance([
+        mid_point(left, right)
+        for left, right in zip(left_knee_points, right_knee_points)
+        if left is not None and right is not None
+    ])
+    foot_stability_px = _mean_distance([
+        mid_point(left, right)
+        for left, right in zip(left_ankle_points, right_ankle_points)
+        if left is not None and right is not None
+    ])
+    hand_path_px = None
+    left_hand_path = _path_length(left_wrist_points)
+    right_hand_path = _path_length(right_wrist_points)
+    if left_hand_path is not None and right_hand_path is not None:
+        hand_path_px = float((left_hand_path + right_hand_path) / 2.0)
+    elif left_hand_path is not None:
+        hand_path_px = left_hand_path
+    elif right_hand_path is not None:
+        hand_path_px = right_hand_path
+
+    if len(spine_angles) >= 2:
+        posture_changes += sum(1 for prev, curr in zip(spine_angles, spine_angles[1:]) if abs(curr - prev) >= 5.0)
+
+    spine_angle_deg = float(np.mean(spine_angles)) if spine_angles else None
+
+    return {
+        "head_movement_px": head_movement_px,
+        "hip_movement_px": hip_movement_px,
+        "shoulder_turn_deg": shoulder_turn_deg,
+        "knee_movement_px": knee_movement_px,
+        "foot_stability_px": foot_stability_px,
+        "hand_path_px": hand_path_px,
+        "spine_angle_deg": spine_angle_deg,
+        "posture_changes": float(posture_changes),
+        "neck_movement_px": _mean_distance(neck_points),
+    }
+
+
 def compute_swing_metrics(landmarks: List[Dict], config: Dict) -> Dict[str, float]:
     """Compute basic swing metrics from landmarks.
 
     Returns a dict for easy JSON serialization.
     """
     metrics = _compute_from_landmarks(landmarks, config)
-    return metrics.to_dict()
+    coordinate_metrics = compute_coordinate_movement_metrics(landmarks)
+    combined = metrics.to_dict()
+    combined.update(coordinate_metrics)
+    return combined

@@ -11,6 +11,7 @@ import cv2
 import numpy as np
 import pandas as pd
 
+from swingsight.metrics import compute_coordinate_movement_metrics
 from webapp.utils.storage import ensure_dir
 
 
@@ -149,6 +150,22 @@ SKELETON_CONNECTIONS = [
 MARKER_SIZES = {"head": 3, "neck": 2, "left_shoulder": 3, "right_shoulder": 3, "left_elbow": 3, "right_elbow": 3, "left_wrist": 3, "right_wrist": 3, "left_hip": 3, "right_hip": 3, "left_knee": 3, "right_knee": 3, "left_ankle": 3, "right_ankle": 3, "mid_hip": 0}
 HAND_STALE_FRAME_THRESHOLD = 2
 HAND_MIN_REFRESH_CONFIDENCE = 0.15
+BODY_LANDMARK_EXPORTS = [
+    "head",
+    "neck",
+    "left_shoulder",
+    "right_shoulder",
+    "left_elbow",
+    "right_elbow",
+    "left_hand",
+    "right_hand",
+    "left_hip",
+    "right_hip",
+    "left_knee",
+    "right_knee",
+    "left_foot",
+    "right_foot",
+]
 
 
 def _frame_point(value: Dict[str, Any], width: int, height: int) -> Optional[tuple[int, int, float]]:
@@ -176,6 +193,139 @@ def _frame_point(value: Dict[str, Any], width: int, height: int) -> Optional[tup
         int(max(0, min(height - 1, round(y_value)))),
         confidence_value,
     )
+
+
+def _coordinate_export_point(frame_points: Dict[str, tuple[int, int, float]], export_name: str) -> Optional[tuple[int, int, float]]:
+    if export_name == "head":
+        return frame_points.get("nose")
+    if export_name == "neck":
+        left_shoulder = frame_points.get("left_shoulder")
+        right_shoulder = frame_points.get("right_shoulder")
+        if left_shoulder and right_shoulder:
+            return (
+                int(round((left_shoulder[0] + right_shoulder[0]) / 2.0)),
+                int(round((left_shoulder[1] + right_shoulder[1]) / 2.0)),
+                float((left_shoulder[2] + right_shoulder[2]) / 2.0),
+            )
+        return None
+    if export_name == "left_hand":
+        return frame_points.get("left_wrist")
+    if export_name == "right_hand":
+        return frame_points.get("right_wrist")
+    if export_name == "left_foot":
+        return frame_points.get("left_ankle")
+    if export_name == "right_foot":
+        return frame_points.get("right_ankle")
+    return frame_points.get(export_name)
+
+
+def _coordinate_value_source(frame_reason: str | None, tracking_mode: str) -> str:
+    if frame_reason == DEBUG_FRAME_REASONS["interpolated"]:
+        return "interpolated"
+    if tracking_mode == "raw":
+        return "raw"
+    return "smoothed"
+
+
+def _build_body_coordinate_exports(
+    dense_series: Dict[int, Dict[str, tuple[int, int, float]]],
+    frame_reasons: Dict[int, str],
+    *,
+    fps: float,
+    tracking_mode: str,
+) -> tuple[list[Dict[str, Any]], list[Dict[str, Any]], Dict[str, float], int]:
+    long_rows: list[Dict[str, Any]] = []
+    wide_rows: list[Dict[str, Any]] = []
+    body_part_counts = {name: 0 for name in BODY_LANDMARK_EXPORTS}
+    total_frames = len(dense_series)
+
+    for frame_index in sorted(dense_series.keys()):
+        frame_points = dense_series.get(frame_index, {}) or {}
+        frame_reason = frame_reasons.get(frame_index)
+        source_label = _coordinate_value_source(frame_reason, tracking_mode)
+        timestamp = float(frame_index / fps) if fps else float(frame_index)
+        wide_row: Dict[str, Any] = {
+            "frame_number": frame_index,
+            "timestamp": timestamp,
+            "value_source": source_label,
+        }
+
+        for landmark_name in BODY_LANDMARK_EXPORTS:
+            point = _coordinate_export_point(frame_points, landmark_name)
+            point_source = source_label if point is not None else "missing"
+            x_value = point[0] if point is not None else None
+            y_value = point[1] if point is not None else None
+            confidence_value = point[2] if point is not None else None
+            if point is not None and confidence_value is not None and confidence_value >= 0.5:
+                body_part_counts[landmark_name] += 1
+
+            long_rows.append(
+                {
+                    "frame_number": frame_index,
+                    "timestamp": timestamp,
+                    "landmark_name": landmark_name,
+                    "x": x_value,
+                    "y": y_value,
+                    "confidence": confidence_value,
+                    "value_source": point_source,
+                }
+            )
+
+            wide_row[f"{landmark_name}_x"] = x_value
+            wide_row[f"{landmark_name}_y"] = y_value
+            wide_row[f"{landmark_name}_confidence"] = confidence_value
+            wide_row[f"{landmark_name}_source"] = point_source
+
+        wide_rows.append(wide_row)
+
+    body_part_tracking_rates = {
+        landmark_name: round((count / total_frames) * 100.0, 2) if total_frames else None
+        for landmark_name, count in body_part_counts.items()
+    }
+    return long_rows, wide_rows, body_part_tracking_rates, total_frames
+
+
+def _build_coordinate_metric_frames(
+    dense_series: Dict[int, Dict[str, tuple[int, int, float]]],
+    *,
+    fps: float,
+) -> list[Dict[str, Any]]:
+    frames: list[Dict[str, Any]] = []
+    for frame_index in sorted(dense_series.keys()):
+        frame_points = dense_series.get(frame_index, {}) or {}
+        landmarks: Dict[str, Dict[str, Any]] = {}
+
+        export_map = {
+            "nose": _coordinate_export_point(frame_points, "head"),
+            "neck": _coordinate_export_point(frame_points, "neck"),
+            "left_shoulder": _coordinate_export_point(frame_points, "left_shoulder"),
+            "right_shoulder": _coordinate_export_point(frame_points, "right_shoulder"),
+            "left_elbow": _coordinate_export_point(frame_points, "left_elbow"),
+            "right_elbow": _coordinate_export_point(frame_points, "right_elbow"),
+            "left_wrist": _coordinate_export_point(frame_points, "left_hand"),
+            "right_wrist": _coordinate_export_point(frame_points, "right_hand"),
+            "left_hip": _coordinate_export_point(frame_points, "left_hip"),
+            "right_hip": _coordinate_export_point(frame_points, "right_hip"),
+            "left_knee": _coordinate_export_point(frame_points, "left_knee"),
+            "right_knee": _coordinate_export_point(frame_points, "right_knee"),
+            "left_ankle": _coordinate_export_point(frame_points, "left_foot"),
+            "right_ankle": _coordinate_export_point(frame_points, "right_foot"),
+        }
+
+        for name, point in export_map.items():
+            if point is None:
+                continue
+            landmarks[name] = {"x": point[0], "y": point[1], "visibility": point[2]}
+
+        frames.append(
+            {
+                "frame_index": frame_index,
+                "timestamp_sec": float(frame_index / fps) if fps else float(frame_index),
+                "landmarks": landmarks,
+            }
+        )
+
+    return frames
 
 
 def _synthesized_points(landmarks: Dict[str, Dict[str, Any]], width: int, height: int) -> Dict[str, tuple[int, int, float]]:
@@ -1559,7 +1709,7 @@ def _build_dense_pose_series(
     debug_frames_dir: Path | None = None,
 ) -> tuple[Dict[int, Dict[str, tuple[int, int, float]]], Dict[str, int], Dict[str, int], list[Dict[str, Any]], list[Dict[str, Any]]]:
     if not pose_frames:
-        return {}, {"frames_interpolated": 0, "frames_rejected": 0, "frames_missing": 0}, {"ankle_corrections": 0, "swap_corrections": 0, "knee_swap_corrections": 0, "foot_swap_corrections": 0, "lower_body_rejections": 0, "lower_body_interpolations": 0, "hand_swap_corrections": 0, "hand_rejections": 0, "hand_interpolations": 0, "hand_recoveries": 0, "stale_hand_corrections": 0, "frames_with_missing_wrist_detection": 0}, [], []
+        return {}, {"frames_interpolated": 0, "frames_rejected": 0, "frames_missing": 0}, {"ankle_corrections": 0, "swap_corrections": 0, "knee_swap_corrections": 0, "foot_swap_corrections": 0, "lower_body_rejections": 0, "lower_body_interpolations": 0, "hand_swap_corrections": 0, "hand_rejections": 0, "hand_interpolations": 0, "hand_recoveries": 0, "stale_hand_corrections": 0, "frames_with_missing_wrist_detection": 0}, [], [], {}
 
     frame_points: Dict[int, Dict[str, tuple[int, int, float]]] = {}
     frame_reasons: Dict[int, str] = {}
@@ -1588,7 +1738,7 @@ def _build_dense_pose_series(
             dense_series[current_index] = frame_points.get(current_index, {})
             if current_index not in frame_points:
                 metrics["frames_missing"] += 1
-        return dense_series, metrics, corrections, debug_rows, hand_debug_rows
+        return dense_series, metrics, corrections, debug_rows, hand_debug_rows, frame_reasons
 
     ordered_indices = sorted(frame_points.keys())
     for current_index in range(max(0, video_frame_count)):
@@ -1790,7 +1940,7 @@ def _build_dense_pose_series(
         if debug_frames_dir and frame_reasons.get(current_index) in {DEBUG_FRAME_REASONS["rejected_landmark"], DEBUG_FRAME_REASONS["ankle_jump"], DEBUG_FRAME_REASONS["pose_missing"], DEBUG_FRAME_REASONS["left_right_swap"], DEBUG_FRAME_REASONS["interpolated"]}:
             debug_frames_dir.mkdir(parents=True, exist_ok=True)
 
-    return dense_series, metrics, corrections, debug_rows, hand_debug_rows
+    return dense_series, metrics, corrections, debug_rows, hand_debug_rows, frame_reasons
 
 
 def save_overlay_video(frames: Iterable[np.ndarray], output_path: str | Path, fps: float, frame_size: tuple[int, int]) -> str:
@@ -1993,7 +2143,7 @@ def generate_pose_overlay(
     pose_frame_count = sum(1 for frame in pose_frames if frame.get("landmarks"))
     raw_frame_indices = {int(frame.get("frame_index", 0) or 0) for frame in pose_frames}
     LOGGER.info("POSE LANDMARK MAPPING %s", json.dumps(LANDMARK_INDEX_MAPPING, sort_keys=True))
-    dense_series, dense_metrics, correction_metrics, lower_body_debug_rows, hand_debug_rows = _build_dense_pose_series(
+    dense_series, dense_metrics, correction_metrics, lower_body_debug_rows, hand_debug_rows, frame_reasons = _build_dense_pose_series(
         video_frame_count,
         pose_frames,
         width=width,
@@ -2155,6 +2305,8 @@ def generate_pose_overlay(
     lower_body_debug_csv_path = overlay_root / f"{video_file.stem}_lower_body_tracking_debug.csv"
     hand_debug_csv_path = overlay_root / f"{video_file.stem}_hand_tracking_debug.csv"
     experiments_root = ensure_dir(overlay_root.parent / "experiments")
+    body_coordinate_csv_path = experiments_root / "body_landmark_coordinates.csv"
+    body_coordinate_wide_csv_path = experiments_root / "body_landmark_coordinates_wide.csv"
     hand_tracking_experiments_csv_path = experiments_root / "hand_tracking_debug.csv"
 
     raw_rows: list[Dict[str, Any]] = []
@@ -2213,8 +2365,23 @@ def generate_pose_overlay(
         ]
         pd.DataFrame(tracking_debug_rows).to_csv(hand_tracking_experiments_csv_path, index=False)
 
+    body_coordinate_rows, body_coordinate_wide_rows, body_part_tracking_rates, tracked_landmark_count = _build_body_coordinate_exports(
+        dense_series,
+        frame_reasons,
+        fps=fps,
+        tracking_mode=tracking_mode,
+    )
+    if body_coordinate_rows:
+        pd.DataFrame(body_coordinate_rows).to_csv(body_coordinate_csv_path, index=False)
+    if body_coordinate_wide_rows:
+        pd.DataFrame(body_coordinate_wide_rows).to_csv(body_coordinate_wide_csv_path, index=False)
+    body_metric_frames = _build_coordinate_metric_frames(dense_series, fps=fps)
+    body_movement_metrics = compute_coordinate_movement_metrics(body_metric_frames)
+
     saved_path = save_overlay_video(rendered_frames, overlay_path, fps, frame_size)
     overlay_validation = validate_overlay_video(saved_path, video_file)
+    body_coordinate_csv_url = f"/outputs/experiments/{body_coordinate_csv_path.name}" if body_coordinate_csv_path.exists() else None
+    body_coordinate_wide_csv_url = f"/outputs/experiments/{body_coordinate_wide_csv_path.name}" if body_coordinate_wide_csv_path.exists() else None
     tracking_debug_video_path = None
     tracking_debug_video_url = None
     lower_body_debug_video_path = None
@@ -2264,6 +2431,7 @@ def generate_pose_overlay(
     right_wrist_missing_frames = sum(1 for row in hand_debug_rows if row.get("raw_right_wrist_x") is None)
     quality_metrics = {
         "frames_processed": frames_processed,
+        "total_frames_processed": frames_processed,
         "frames_with_pose": frames_with_pose,
         "frames_interpolated": dense_metrics.get("frames_interpolated", 0),
         "frames_rejected": dense_metrics.get("frames_rejected", 0),
@@ -2298,7 +2466,10 @@ def generate_pose_overlay(
         "right_wrist_missing_frames": right_wrist_missing_frames,
         "average_pose_quality_score": average_pose_quality,
         "tracking_mode": tracking_mode,
+        "landmarks_tracked": tracked_landmark_count,
+        "body_part_tracking_rates": body_part_tracking_rates,
     }
+    quality_metrics.update(body_movement_metrics)
 
     if not pose_frame_count:
         LOGGER.info("POSE FAILED video=%s pose_frames=%s", video_file, pose_frame_count)
@@ -2335,6 +2506,10 @@ def generate_pose_overlay(
         "overlay_validation": overlay_validation,
         "overlay_style": overlay_style,
         "tracking_mode": tracking_mode,
+        "body_landmark_coordinates_csv": str(body_coordinate_csv_path) if body_coordinate_csv_path.exists() else None,
+        "body_landmark_coordinates_csv_url": body_coordinate_csv_url,
+        "body_landmark_coordinates_wide_csv": str(body_coordinate_wide_csv_path) if body_coordinate_wide_csv_path.exists() else None,
+        "body_landmark_coordinates_wide_csv_url": body_coordinate_wide_csv_url,
         "raw_pose_landmarks_csv": str(raw_pose_csv_path) if raw_pose_csv_path.exists() else None,
         "corrected_pose_landmarks_csv": str(corrected_pose_csv_path) if corrected_pose_csv_path.exists() else None,
         "lower_body_tracking_debug_csv": str(lower_body_debug_csv_path) if lower_body_debug_csv_path.exists() else None,
@@ -2363,4 +2538,5 @@ def generate_pose_overlay(
         "quality_metrics": quality_metrics,
         "debug_frame_paths": debug_frame_paths[:12],
         "landmark_mapping": LANDMARK_INDEX_MAPPING,
+        "body_movement_metrics": body_movement_metrics,
     }

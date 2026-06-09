@@ -573,7 +573,6 @@ function renderResults(result) {
     null,
     2,
   );
-  advancedTracking.textContent = JSON.stringify(result?.tracking || {}, null, 2);
   advancedHands.textContent = JSON.stringify(
     {
       hand_tracking_rate: qualityMetrics?.hand_tracking_rate ?? qualityMetrics?.hands_tracked_rate ?? null,
@@ -628,6 +627,18 @@ function renderResults(result) {
       overlay_quality_metrics: qualityMetrics,
       overlay_files: overlayFiles,
       overlay_variants: state.overlayVariants || {},
+    },
+    null,
+    2,
+  );
+  advancedTracking.textContent = JSON.stringify(
+    {
+      total_frames_processed: trackingStats?.total_frames_processed ?? qualityMetrics?.total_frames_processed ?? result?.video_metadata?.frame_count ?? null,
+      landmarks_tracked: trackingStats?.landmarks_tracked ?? qualityMetrics?.landmarks_tracked ?? null,
+      body_part_tracking_rates: qualityMetrics?.body_part_tracking_rates ?? {},
+      body_landmark_coordinates_csv_url: trackingStats?.body_landmark_coordinates_csv_url || null,
+      body_landmark_coordinates_wide_csv_url: trackingStats?.body_landmark_coordinates_wide_csv_url || null,
+      tracking: result?.tracking || {},
     },
     null,
     2,
