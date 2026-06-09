@@ -14,18 +14,22 @@ from swingsight.pose_estimation import run_pose_estimation
 from swingsight.visualization import render_annotated_video
 
 
+def _classify_club_recognition(recognition: Dict) -> Dict:
+    detected_category = str(recognition.get("detected_category", "Iron/Wedge"))
+    broad_category = "wood" if detected_category.lower().startswith("wood") else "iron_wedge"
+    recognition["category"] = predicted_to_category(recognition.get("predicted_club"), broad_category)
+    return recognition
+
+
 def run_club_detection(club_image_path: Optional[str], config: Dict) -> Dict:
     """Detect club/head region and broad category with YOLOv8-compatible interface."""
     if not club_image_path:
         return {"category": CLUB_CATEGORIES[0], "confidence": 0.0, "source": "manual_default"}
 
-    recognition = recognize_club_from_frame(club_image_path, config)
-    detected_category = recognition.get("detected_category", "Iron/Wedge")
-    broad_category = "wood" if detected_category.lower().startswith("wood") else "iron_wedge"
-    category = predicted_to_category(recognition.get("predicted_club"), broad_category)
+    recognition = _classify_club_recognition(recognize_club_from_frame(club_image_path, config))
 
     return {
-        "category": category,
+        "category": recognition["category"],
         "confidence": float(recognition.get("confidence", 0.0)),
         "bbox": recognition.get("bbox"),
         "source": recognition.get("sources", {}).get("detector", "club_recognition"),
@@ -38,11 +42,7 @@ def detect_club_from_frame(frame_path: str, config: Dict) -> Dict:
 
     Placeholder: calls run_club_detection which currently returns a dummy result.
     """
-    recognition = recognize_club_from_frame(frame_path, config)
-    detected_category = recognition.get("detected_category", "Iron/Wedge")
-    broad_category = "wood" if detected_category.lower().startswith("wood") else "iron_wedge"
-    recognition["category"] = predicted_to_category(recognition.get("predicted_club"), broad_category)
-    return recognition
+    return _classify_club_recognition(recognize_club_from_frame(frame_path, config))
 
 
 def check_body_visibility_from_frame(frame_path: str, config: Dict) -> Dict:
@@ -66,8 +66,6 @@ def check_body_visibility_from_frame(frame_path: str, config: Dict) -> Dict:
     ]
 
     # Heuristic placeholder: if file exists and size > 2000 bytes, assume visible.
-    from pathlib import Path
-
     p = Path(frame_path)
     visible = p.exists() and p.stat().st_size > 2000
     missing = [] if visible else required
