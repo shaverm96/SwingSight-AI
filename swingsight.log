@@ -12,28 +12,20 @@ Missing model artifact for club_detector
 Missing model artifact for swing_classifier
  * Debugger is active!
  * Debugger PIN: 451-629-467
-127.0.0.1 - - [09/Jun/2026 17:18:43] "GET / HTTP/1.1" 200 -
-127.0.0.1 - - [09/Jun/2026 17:18:43] "GET / HTTP/1.1" 200 -
-127.0.0.1 - - [09/Jun/2026 17:18:43] "[36mGET /static/css/dashboard.css?v=20260603 HTTP/1.1[0m" 304 -
-127.0.0.1 - - [09/Jun/2026 17:18:43] "[36mGET /static/js/dashboard.js?v=20260603 HTTP/1.1[0m" 304 -
-127.0.0.1 - - [09/Jun/2026 17:18:43] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
-127.0.0.1 - - [09/Jun/2026 17:18:43] "[33mGET /apple-touch-icon-precomposed.png HTTP/1.1[0m" 404 -
-127.0.0.1 - - [09/Jun/2026 17:18:43] "[33mGET /apple-touch-icon.png HTTP/1.1[0m" 404 -
-127.0.0.1 - - [09/Jun/2026 17:18:43] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
-127.0.0.1 - - [09/Jun/2026 17:18:50] "POST /api/upload-video HTTP/1.1" 200 -
-127.0.0.1 - - [09/Jun/2026 17:18:50] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
-127.0.0.1 - - [09/Jun/2026 17:19:00] "POST /api/analyze HTTP/1.1" 200 -
-[2026-06-09 17:19:00,677] INFO in dashboard: API SERVING upload file path=/Users/mattshaver/Desktop/SwingSight-AI/uploads/video_5758a9b410424dbea0127119f4fa30d1.mov mimetype=video/quicktime
-127.0.0.1 - - [09/Jun/2026 17:19:00] "[35m[1mGET /uploads/video_5758a9b410424dbea0127119f4fa30d1.mov HTTP/1.1[0m" 206 -
-[2026-06-09 17:19:00,680] INFO in dashboard: API SERVING upload file path=/Users/mattshaver/Desktop/SwingSight-AI/uploads/video_5758a9b410424dbea0127119f4fa30d1.mov mimetype=video/quicktime
-127.0.0.1 - - [09/Jun/2026 17:19:00] "[35m[1mGET /uploads/video_5758a9b410424dbea0127119f4fa30d1.mov HTTP/1.1[0m" 206 -
-[2026-06-09 17:19:04,176] INFO in dashboard: API SERVING overlay file path=/Users/mattshaver/Desktop/SwingSight-AI/outputs/overlays/video_5758a9b410424dbea0127119f4fa30d1_overlay_smoothed.mp4 mimetype=video/mp4
-127.0.0.1 - - [09/Jun/2026 17:19:04] "[35m[1mGET /outputs/overlays/video_5758a9b410424dbea0127119f4fa30d1_overlay_smoothed.mp4 HTTP/1.1[0m" 206 -
-[2026-06-09 17:19:04,181] INFO in dashboard: API SERVING overlay file path=/Users/mattshaver/Desktop/SwingSight-AI/outputs/overlays/video_5758a9b410424dbea0127119f4fa30d1_overlay_smoothed.mp4 mimetype=video/mp4
-127.0.0.1 - - [09/Jun/2026 17:19:04] "[35m[1mGET /outputs/overlays/video_5758a9b410424dbea0127119f4fa30d1_overlay_smoothed.mp4 HTTP/1.1[0m" 206 -
-[2026-06-09 17:20:07,248] INFO in dashboard: API SERVING overlay file path=/Users/mattshaver/Desktop/SwingSight-AI/outputs/overlays/video_5758a9b410424dbea0127119f4fa30d1_overlay_smoothed.mp4 mimetype=video/mp4
-127.0.0.1 - - [09/Jun/2026 17:20:07] "[35m[1mGET /outputs/overlays/video_5758a9b410424dbea0127119f4fa30d1_overlay_smoothed.mp4 HTTP/1.1[0m" 206 -
-[2026-06-09 17:20:07,254] INFO in dashboard: API SERVING overlay file path=/Users/mattshaver/Desktop/SwingSight-AI/outputs/overlays/video_5758a9b410424dbea0127119f4fa30d1_overlay_smoothed.mp4 mimetype=video/mp4
-127.0.0.1 - - [09/Jun/2026 17:20:07] "[35m[1mGET /outputs/overlays/video_5758a9b410424dbea0127119f4fa30d1_overlay_smoothed.mp4 HTTP/1.1[0m" 206 -
-/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/multiprocessing/resource_tracker.py:400: UserWarning: resource_tracker: There appear to be 1 leaked semaphore objects to clean up at shutdown: {'/loky-60612-c5ravajd'}
-  warnings.warn(
+127.0.0.1 - - [09/Jun/2026 17:29:33] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [09/Jun/2026 17:29:33] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [09/Jun/2026 17:29:33] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
+127.0.0.1 - - [09/Jun/2026 17:29:33] "[36mGET /static/js/dashboard.js?v=20260603 HTTP/1.1[0m" 304 -
+127.0.0.1 - - [09/Jun/2026 17:29:33] "[36mGET /static/css/dashboard.css?v=20260603 HTTP/1.1[0m" 304 -
+127.0.0.1 - - [09/Jun/2026 17:29:33] "[33mGET /apple-touch-icon-precomposed.png HTTP/1.1[0m" 404 -
+127.0.0.1 - - [09/Jun/2026 17:29:33] "[33mGET /apple-touch-icon.png HTTP/1.1[0m" 404 -
+127.0.0.1 - - [09/Jun/2026 17:29:33] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
+127.0.0.1 - - [09/Jun/2026 17:29:40] "POST /api/upload-video HTTP/1.1" 200 -
+127.0.0.1 - - [09/Jun/2026 17:29:40] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
+127.0.0.1 - - [09/Jun/2026 17:29:50] "POST /api/analyze HTTP/1.1" 200 -
+[2026-06-09 17:29:50,511] INFO in dashboard: API SERVING upload file path=/Users/mattshaver/Desktop/SwingSight-AI/uploads/video_15e92f703ab44153a3c0ba9d8af71b5e.mov mimetype=video/quicktime
+127.0.0.1 - - [09/Jun/2026 17:29:50] "[35m[1mGET /uploads/video_15e92f703ab44153a3c0ba9d8af71b5e.mov HTTP/1.1[0m" 206 -
+[2026-06-09 17:29:50,514] INFO in dashboard: API SERVING upload file path=/Users/mattshaver/Desktop/SwingSight-AI/uploads/video_15e92f703ab44153a3c0ba9d8af71b5e.mov mimetype=video/quicktime
+127.0.0.1 - - [09/Jun/2026 17:29:50] "[35m[1mGET /uploads/video_15e92f703ab44153a3c0ba9d8af71b5e.mov HTTP/1.1[0m" 206 -
+[2026-06-09 17:29:52,409] INFO in dashboard: API SERVING overlay file path=/Users/mattshaver/Desktop/SwingSight-AI/outputs/overlays/video_15e92f703ab44153a3c0ba9d8af71b5e_overlay_smoothed.mp4 mimetype=video/mp4
+127.0.0.1 - - [09/Jun/2026 17:29:52] "GET /outputs/overlays/video_15e92f703ab44153a3c0ba9d8af71b5e_overlay_smoothed.mp4 HTTP/1.1" 200 -

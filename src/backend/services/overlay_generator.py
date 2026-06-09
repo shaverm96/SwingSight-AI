@@ -147,6 +147,8 @@ SKELETON_CONNECTIONS = [
 ]
 
 MARKER_SIZES = {"head": 3, "neck": 2, "left_shoulder": 3, "right_shoulder": 3, "left_elbow": 3, "right_elbow": 3, "left_wrist": 3, "right_wrist": 3, "left_hip": 3, "right_hip": 3, "left_knee": 3, "right_knee": 3, "left_ankle": 3, "right_ankle": 3, "mid_hip": 0}
+HAND_STALE_FRAME_THRESHOLD = 2
+HAND_MIN_REFRESH_CONFIDENCE = 0.15
 
 
 def _frame_point(value: Dict[str, Any], width: int, height: int) -> Optional[tuple[int, int, float]]:
@@ -412,6 +414,114 @@ def _distance_score(point_a: tuple[int, int, float] | None, point_b: tuple[int, 
     if point_a is None or point_b is None:
         return float("inf")
     return float(np.hypot(point_a[0] - point_b[0], point_a[1] - point_b[1]))
+
+
+def _hand_smoothing_alpha(
+    name: str,
+    current: tuple[int, int, float] | None,
+    previous: tuple[int, int, float] | None,
+    *,
+    width: int,
+    height: int,
+    style: str,
+) -> float:
+    if name not in HAND_LANDMARK_NAMES or current is None or previous is None:
+        return 0.85 if style == "simple" else 0.92
+
+    movement = _point_distance(previous, current)
+    slow_threshold = max(8.0, float(min(width, height)) * 0.018)
+    fast_threshold = max(20.0, float(min(width, height)) * 0.04)
+
+    if movement >= fast_threshold:
+        return 0.22
+    if movement >= slow_threshold:
+        return 0.42
+    return 0.68 if style == "simple" else 0.74
+
+
+def _log_point_triplet(prefix: str, point: tuple[int, int, float] | None) -> dict[str, float | int | None]:
+    payload = _landmark_payload(point)
+    return {
+        f"{prefix}_x": payload["x"],
+        f"{prefix}_y": payload["y"],
+        f"{prefix}_confidence": payload["confidence"],
+    }
+
+
+def _refresh_stale_hand_tracking(
+    current_points: Dict[str, tuple[int, int, float]],
+    raw_points: Dict[str, tuple[int, int, float]],
+    previous_points: Dict[str, tuple[int, int, float]],
+    stale_state: Dict[str, int],
+    *,
+    width: int,
+    height: int,
+    confidence_threshold: float,
+) -> tuple[Dict[str, tuple[int, int, float]], int, Dict[str, Any]]:
+    refreshed = dict(current_points)
+    stale_corrections = 0
+    debug_flags: Dict[str, Any] = {
+        "stale_hand_tracking": False,
+        "left_stale_hand_tracking": False,
+        "right_stale_hand_tracking": False,
+        "left_stale_hand_reason": None,
+        "right_stale_hand_reason": None,
+    }
+
+    wrist_hold_threshold = max(3.0, float(min(width, height)) * 0.008)
+    arm_motion_threshold = max(6.0, float(min(width, height)) * 0.015)
+    refresh_confidence_threshold = max(HAND_MIN_REFRESH_CONFIDENCE, confidence_threshold * 0.5)
+
+    for side in ("left", "right"):
+        wrist_name = f"{side}_wrist"
+        elbow_name = f"{side}_elbow"
+        shoulder_name = f"{side}_shoulder"
+        current_wrist = refreshed.get(wrist_name)
+        previous_wrist = previous_points.get(wrist_name)
+        raw_wrist = raw_points.get(wrist_name)
+        current_elbow = refreshed.get(elbow_name)
+        previous_elbow = previous_points.get(elbow_name)
+        current_shoulder = refreshed.get(shoulder_name)
+        previous_shoulder = previous_points.get(shoulder_name)
+
+        if current_wrist is None or previous_wrist is None or current_elbow is None or current_shoulder is None:
+            stale_state[side] = 0
+            continue
+
+        wrist_hold = _point_distance(current_wrist, previous_wrist) <= wrist_hold_threshold
+        elbow_motion = _point_distance(current_elbow, previous_elbow) if previous_elbow is not None else 0.0
+        shoulder_motion = _point_distance(current_shoulder, previous_shoulder) if previous_shoulder is not None else 0.0
+        arm_motion = max(elbow_motion, shoulder_motion) >= arm_motion_threshold
+        raw_changed = raw_wrist is not None and _point_distance(raw_wrist, previous_wrist) > wrist_hold_threshold
+
+        if wrist_hold and arm_motion and raw_changed:
+            stale_state[side] += 1
+        else:
+            stale_state[side] = 0
+
+        if stale_state[side] < HAND_STALE_FRAME_THRESHOLD:
+            continue
+
+        replacement = None
+        reason = ""
+        if raw_wrist is not None and raw_wrist[2] >= refresh_confidence_threshold:
+            replacement = raw_wrist
+            reason = "raw_refresh"
+        elif previous_wrist is not None:
+            replacement = previous_wrist
+            reason = "previous_refresh"
+
+        if replacement is None:
+            continue
+
+        refreshed[wrist_name] = replacement
+        stale_corrections += 1
+        debug_flags["stale_hand_tracking"] = True
+        debug_flags[f"{side}_stale_hand_tracking"] = True
+        debug_flags[f"{side}_stale_hand_reason"] = reason
+        stale_state[side] = 0
+
+    return refreshed, stale_corrections, debug_flags
 
 
 def _landmark_payload(point: tuple[int, int, float] | None) -> dict[str, float | int | None]:
@@ -717,13 +827,16 @@ def _build_hand_frame_log(
     *,
     frame_index: int,
     raw_points: Dict[str, tuple[int, int, float]],
-    corrected_points: Dict[str, tuple[int, int, float]],
+    smoothed_points: Dict[str, tuple[int, int, float]],
+    final_points: Dict[str, tuple[int, int, float]],
     selected_assignment: str,
     same_score: float,
     swapped_score: float,
     swap_corrected: bool,
     rejected: bool,
     used_previous: bool,
+    stale_corrected: bool,
+    stale_flags: Dict[str, Any],
     source_reason: str,
     correction_reason: str,
 ) -> Dict[str, Any]:
@@ -736,50 +849,68 @@ def _build_hand_frame_log(
         "hand_swap_corrected": bool(swap_corrected),
         "hand_rejected": bool(rejected),
         "hand_used_previous": bool(used_previous),
+        "stale_hand_tracking": bool(stale_corrected or stale_flags.get("stale_hand_tracking", False)),
+        "left_stale_hand_tracking": bool(stale_flags.get("left_stale_hand_tracking", False)),
+        "right_stale_hand_tracking": bool(stale_flags.get("right_stale_hand_tracking", False)),
+        "left_stale_hand_reason": stale_flags.get("left_stale_hand_reason"),
+        "right_stale_hand_reason": stale_flags.get("right_stale_hand_reason"),
         "source_reason": source_reason,
         "correction_reason": correction_reason,
-        "raw_left_wrist_x": _landmark_payload(raw_points.get("left_wrist")).get("x"),
-        "raw_left_wrist_y": _landmark_payload(raw_points.get("left_wrist")).get("y"),
-        "raw_right_wrist_x": _landmark_payload(raw_points.get("right_wrist")).get("x"),
-        "raw_right_wrist_y": _landmark_payload(raw_points.get("right_wrist")).get("y"),
-        "raw_left_elbow_x": _landmark_payload(raw_points.get("left_elbow")).get("x"),
-        "raw_left_elbow_y": _landmark_payload(raw_points.get("left_elbow")).get("y"),
-        "raw_right_elbow_x": _landmark_payload(raw_points.get("right_elbow")).get("x"),
-        "raw_right_elbow_y": _landmark_payload(raw_points.get("right_elbow")).get("y"),
-        "corrected_left_wrist_x": _landmark_payload(corrected_points.get("left_wrist")).get("x"),
-        "corrected_left_wrist_y": _landmark_payload(corrected_points.get("left_wrist")).get("y"),
-        "corrected_right_wrist_x": _landmark_payload(corrected_points.get("right_wrist")).get("x"),
-        "corrected_right_wrist_y": _landmark_payload(corrected_points.get("right_wrist")).get("y"),
-        "corrected_left_elbow_x": _landmark_payload(corrected_points.get("left_elbow")).get("x"),
-        "corrected_left_elbow_y": _landmark_payload(corrected_points.get("left_elbow")).get("y"),
-        "corrected_right_elbow_x": _landmark_payload(corrected_points.get("right_elbow")).get("x"),
-        "corrected_right_elbow_y": _landmark_payload(corrected_points.get("right_elbow")).get("y"),
+        **_log_point_triplet("raw_left_wrist", raw_points.get("left_wrist")),
+        **_log_point_triplet("raw_right_wrist", raw_points.get("right_wrist")),
+        **_log_point_triplet("raw_left_elbow", raw_points.get("left_elbow")),
+        **_log_point_triplet("raw_right_elbow", raw_points.get("right_elbow")),
+        **_log_point_triplet("smoothed_left_wrist", smoothed_points.get("left_wrist")),
+        **_log_point_triplet("smoothed_right_wrist", smoothed_points.get("right_wrist")),
+        **_log_point_triplet("smoothed_left_elbow", smoothed_points.get("left_elbow")),
+        **_log_point_triplet("smoothed_right_elbow", smoothed_points.get("right_elbow")),
+        **_log_point_triplet("final_left_wrist", final_points.get("left_wrist")),
+        **_log_point_triplet("final_right_wrist", final_points.get("right_wrist")),
+        **_log_point_triplet("final_left_elbow", final_points.get("left_elbow")),
+        **_log_point_triplet("final_right_elbow", final_points.get("right_elbow")),
     }
 
 
 def _draw_hand_debug_overlay(
     frame: np.ndarray,
-    points: Dict[str, tuple[int, int, float]],
+    raw_points: Dict[str, tuple[int, int, float]],
+    smoothed_points: Dict[str, tuple[int, int, float]],
+    final_points: Dict[str, tuple[int, int, float]],
     debug_record: Dict[str, Any],
 ) -> np.ndarray:
     debug_frame = frame.copy()
-    colors = {
-        "left": (120, 220, 255),
-        "right": (255, 160, 120),
-    }
+    stage_specs = [
+        (raw_points, (0, 0, 255), 1),
+        (smoothed_points, (255, 0, 0), 2),
+        (final_points, (255, 255, 255), 3),
+    ]
+
+    for stage_points, color, thickness in stage_specs:
+        for side in ("left", "right"):
+            shoulder = stage_points.get(f"{side}_shoulder")
+            elbow = stage_points.get(f"{side}_elbow")
+            wrist = stage_points.get(f"{side}_wrist")
+            if shoulder is None or elbow is None or wrist is None:
+                continue
+            cv2.line(debug_frame, shoulder[:2], elbow[:2], color, thickness, cv2.LINE_AA)
+            cv2.line(debug_frame, elbow[:2], wrist[:2], color, thickness, cv2.LINE_AA)
+            for label, point in ((f"{side[0].upper()}_SHOULDER", shoulder), (f"{side[0].upper()}_ELBOW", elbow), (f"{side[0].upper()}_WRIST", wrist)):
+                cv2.circle(debug_frame, point[:2], 7 if label.endswith("WRIST") else 5, color, -1, cv2.LINE_AA)
+                cv2.circle(debug_frame, point[:2], 9 if label.endswith("WRIST") else 7, (0, 0, 0), 1, cv2.LINE_AA)
+                cv2.putText(debug_frame, label, (point[0] + 8, max(18, point[1] - 8)), cv2.FONT_HERSHEY_SIMPLEX, 0.45, color, 1, cv2.LINE_AA)
+
     for side in ("left", "right"):
-        shoulder = points.get(f"{side}_shoulder")
-        elbow = points.get(f"{side}_elbow")
-        wrist = points.get(f"{side}_wrist")
-        if shoulder is None or elbow is None or wrist is None:
-            continue
-        color = colors[side]
-        cv2.line(debug_frame, shoulder[:2], elbow[:2], color, 4, cv2.LINE_AA)
-        cv2.line(debug_frame, elbow[:2], wrist[:2], color, 4, cv2.LINE_AA)
-        for label, point in ((f"{side[0].upper()}_SHOULDER", shoulder), (f"{side[0].upper()}_ELBOW", elbow), (f"{side[0].upper()}_WRIST", wrist)):
-            cv2.circle(debug_frame, point[:2], 7, color, -1, cv2.LINE_AA)
-            cv2.circle(debug_frame, point[:2], 9, (255, 255, 255), 1, cv2.LINE_AA)
-            cv2.putText(debug_frame, label, (point[0] + 8, max(18, point[1] - 8)), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1, cv2.LINE_AA)
+        raw_wrist = raw_points.get(f"{side}_wrist")
+        smoothed_wrist = smoothed_points.get(f"{side}_wrist")
+        final_wrist = final_points.get(f"{side}_wrist")
+        lines = [
+            f"{side.upper()} RAW  {('missing' if raw_wrist is None else f'{raw_wrist[0]},{raw_wrist[1]} conf {raw_wrist[2]:.2f}')}",
+            f"{side.upper()} SMOOTH {('missing' if smoothed_wrist is None else f'{smoothed_wrist[0]},{smoothed_wrist[1]} conf {smoothed_wrist[2]:.2f}')}",
+            f"{side.upper()} FINAL {('missing' if final_wrist is None else f'{final_wrist[0]},{final_wrist[1]} conf {final_wrist[2]:.2f}')}",
+        ]
+        base_y = 74 if side == "left" else 134
+        for offset, text in enumerate(lines):
+            cv2.putText(debug_frame, text, (14, base_y + (offset * 16)), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (255, 255, 255), 1, cv2.LINE_AA)
 
     banner = []
     if debug_record.get("hand_swap_corrected"):
@@ -788,9 +919,11 @@ def _draw_hand_debug_overlay(
         banner.append("rejected")
     if debug_record.get("hand_used_previous"):
         banner.append("used previous")
+    if debug_record.get("stale_hand_tracking"):
+        banner.append("stale corrected")
     if banner:
-        cv2.rectangle(debug_frame, (14, 14), (340, 54), (12, 18, 28), -1, cv2.LINE_AA)
-        cv2.rectangle(debug_frame, (14, 14), (340, 54), (255, 255, 255), 1, cv2.LINE_AA)
+        cv2.rectangle(debug_frame, (14, 14), (470, 58), (12, 18, 28), -1, cv2.LINE_AA)
+        cv2.rectangle(debug_frame, (14, 14), (470, 58), (255, 255, 255), 1, cv2.LINE_AA)
         cv2.putText(debug_frame, " | ".join(banner), (24, 41), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
     return debug_frame
 
@@ -1115,6 +1248,7 @@ def smooth_landmarks(
     previous: Dict[str, tuple[int, int, float]],
     *,
     alpha: float = 0.6,
+    alpha_map: Dict[str, float] | None = None,
 ) -> Dict[str, tuple[int, int, float]]:
     if not previous:
         return current
@@ -1124,8 +1258,9 @@ def smooth_landmarks(
         if prev is None:
             smoothed[name] = point
             continue
-        x = int(round(prev[0] * alpha + point[0] * (1.0 - alpha)))
-        y = int(round(prev[1] * alpha + point[1] * (1.0 - alpha)))
+        point_alpha = alpha_map.get(name, alpha) if alpha_map else alpha
+        x = int(round(prev[0] * point_alpha + point[0] * (1.0 - point_alpha)))
+        y = int(round(prev[1] * point_alpha + point[1] * (1.0 - point_alpha)))
         confidence = float(max(prev[2], point[2]))
         smoothed[name] = (x, y, confidence)
     return smoothed
@@ -1242,7 +1377,7 @@ def _build_dense_pose_series(
     debug_frames_dir: Path | None = None,
 ) -> tuple[Dict[int, Dict[str, tuple[int, int, float]]], Dict[str, int], Dict[str, int], list[Dict[str, Any]], list[Dict[str, Any]]]:
     if not pose_frames:
-        return {}, {"frames_interpolated": 0, "frames_rejected": 0, "frames_missing": 0}, {"ankle_corrections": 0, "swap_corrections": 0, "knee_swap_corrections": 0, "foot_swap_corrections": 0, "lower_body_rejections": 0, "lower_body_interpolations": 0, "hand_swap_corrections": 0, "hand_rejections": 0, "hand_interpolations": 0}, [], []
+        return {}, {"frames_interpolated": 0, "frames_rejected": 0, "frames_missing": 0}, {"ankle_corrections": 0, "swap_corrections": 0, "knee_swap_corrections": 0, "foot_swap_corrections": 0, "lower_body_rejections": 0, "lower_body_interpolations": 0, "hand_swap_corrections": 0, "hand_rejections": 0, "hand_interpolations": 0, "stale_hand_corrections": 0, "frames_with_missing_wrist_detection": 0}, [], []
 
     frame_points: Dict[int, Dict[str, tuple[int, int, float]]] = {}
     frame_reasons: Dict[int, str] = {}
@@ -1252,12 +1387,19 @@ def _build_dense_pose_series(
 
     dense_series: Dict[int, Dict[str, tuple[int, int, float]]] = {}
     metrics = {"frames_interpolated": 0, "frames_rejected": 0, "frames_missing": 0}
-    corrections = {"ankle_corrections": 0, "swap_corrections": 0, "knee_swap_corrections": 0, "foot_swap_corrections": 0, "lower_body_rejections": 0, "lower_body_interpolations": 0, "hand_swap_corrections": 0, "hand_rejections": 0, "hand_interpolations": 0}
+    corrections = {"ankle_corrections": 0, "swap_corrections": 0, "knee_swap_corrections": 0, "foot_swap_corrections": 0, "lower_body_rejections": 0, "lower_body_interpolations": 0, "hand_swap_corrections": 0, "hand_rejections": 0, "hand_interpolations": 0, "stale_hand_corrections": 0, "frames_with_missing_wrist_detection": 0}
     debug_rows: list[Dict[str, Any]] = []
     hand_debug_rows: list[Dict[str, Any]] = []
     previous_valid: Dict[str, tuple[int, int, float]] = {}
     previous_valid_index: int | None = None
     hand_gap_active = {"left": False, "right": False}
+    hand_stale_state = {"left": 0, "right": 0}
+    left_hand_tracked_frames = 0
+    right_hand_tracked_frames = 0
+    left_wrist_confidences: list[float] = []
+    right_wrist_confidences: list[float] = []
+    left_wrist_missing_frames = 0
+    right_wrist_missing_frames = 0
 
     if tracking_mode == "raw":
         for current_index in range(max(0, video_frame_count)):
@@ -1343,9 +1485,19 @@ def _build_dense_pose_series(
         corrections["hand_rejections"] += int(hand_summary.get("hand_rejections", 0))
         hand_debug = dict(hand_summary.get("debug_record", {}))
 
+        missing_wrist_frame = False
+        if source_points.get("left_wrist") is None:
+            left_wrist_missing_frames += 1
+            missing_wrist_frame = True
+        if source_points.get("right_wrist") is None:
+            right_wrist_missing_frames += 1
+            missing_wrist_frame = True
+        if missing_wrist_frame:
+            corrections["frames_with_missing_wrist_detection"] += 1
+
         for side in ("left", "right"):
             wrist_name = f"{side}_wrist"
-            raw_wrist = valid_points.get(wrist_name)
+            raw_wrist = source_points.get(wrist_name)
             if raw_wrist is not None and raw_wrist[2] >= confidence_threshold and hand_resolved.get(wrist_name) is not None:
                 hand_gap_active[side] = False
             if hand_debug.get(f"{side}_wrist_used_previous") and not hand_gap_active[side]:
@@ -1353,22 +1505,6 @@ def _build_dense_pose_series(
                 hand_gap_active[side] = True
             if hand_debug.get(f"{side}_wrist_rejected") and raw_wrist is None:
                 hand_gap_active[side] = False
-
-        hand_debug_rows.append(
-            _build_hand_frame_log(
-                frame_index=current_index,
-                raw_points=valid_points,
-                corrected_points=hand_resolved,
-                selected_assignment=str(hand_debug.get("selected_assignment", "A")),
-                same_score=float(hand_debug.get("same_assignment_score", float("inf"))),
-                swapped_score=float(hand_debug.get("swapped_assignment_score", float("inf"))),
-                swap_corrected=bool(hand_debug.get("hand_swap_corrected", False)),
-                rejected=bool(hand_debug.get("hand_rejected", False)),
-                used_previous=bool(hand_debug.get("hand_used_previous", False)),
-                source_reason=frame_reasons.get(current_index, "source"),
-                correction_reason=str(hand_debug.get("hand_correction_reason", "")),
-            )
-        )
 
         knee_points = {name: hand_resolved.get(name) for name in ("left_knee", "right_knee") if hand_resolved.get(name) is not None}
         hip_points = {name: hand_resolved.get(name) for name in ("left_hip", "right_hip") if hand_resolved.get(name) is not None}
@@ -1386,15 +1522,33 @@ def _build_dense_pose_series(
         corrections["ankle_corrections"] += ankle_corrections
         corrections["swap_corrections"] += swap_corrections
 
+        alpha_map = {
+            name: _hand_smoothing_alpha(name, corrected_points.get(name), previous_valid.get(name), width=width, height=height, style=style)
+            for name in HAND_LANDMARK_NAMES
+            if corrected_points.get(name) is not None
+        }
+
         if frame_rejected:
             metrics["frames_rejected"] += 1
             frame_reasons[current_index] = DEBUG_FRAME_REASONS["rejected_landmark"]
 
         if corrected_points:
             if previous_valid:
-                corrected_points = smooth_landmarks(corrected_points, previous_valid, alpha=0.85 if style == "simple" else 0.95)
+                smoothed_points = smooth_landmarks(corrected_points, previous_valid, alpha=0.85 if style == "simple" else 0.95, alpha_map=alpha_map)
+            else:
+                smoothed_points = dict(corrected_points)
+            stale_refreshed_points, stale_corrections, stale_flags = _refresh_stale_hand_tracking(
+                smoothed_points,
+                source_points,
+                previous_valid,
+                hand_stale_state,
+                width=width,
+                height=height,
+                confidence_threshold=confidence_threshold,
+            )
+            corrections["stale_hand_corrections"] += stale_corrections
             corrected_points = _stabilize_key_landmarks(
-                corrected_points,
+                stale_refreshed_points,
                 previous_valid,
                 current_index=current_index,
                 previous_index=previous_valid_index,
@@ -1403,6 +1557,8 @@ def _build_dense_pose_series(
             previous_valid = corrected_points
             previous_valid_index = current_index
         elif previous_valid:
+            smoothed_points = {}
+            stale_flags = {"stale_hand_tracking": False, "left_stale_hand_tracking": False, "right_stale_hand_tracking": False, "left_stale_hand_reason": None, "right_stale_hand_reason": None}
             corrected_points = _stabilize_key_landmarks(
                 {},
                 previous_valid,
@@ -1410,6 +1566,38 @@ def _build_dense_pose_series(
                 previous_index=previous_valid_index,
                 max_hold_frames=2,
             )
+        else:
+            smoothed_points = dict(corrected_points)
+            stale_flags = {"stale_hand_tracking": False, "left_stale_hand_tracking": False, "right_stale_hand_tracking": False, "left_stale_hand_reason": None, "right_stale_hand_reason": None}
+
+        if corrected_points:
+            left_final_wrist = corrected_points.get("left_wrist")
+            right_final_wrist = corrected_points.get("right_wrist")
+            if left_final_wrist is not None and left_final_wrist[2] >= 0.5:
+                left_hand_tracked_frames += 1
+                left_wrist_confidences.append(float(left_final_wrist[2]))
+            if right_final_wrist is not None and right_final_wrist[2] >= 0.5:
+                right_hand_tracked_frames += 1
+                right_wrist_confidences.append(float(right_final_wrist[2]))
+
+        hand_debug_rows.append(
+            _build_hand_frame_log(
+                frame_index=current_index,
+                raw_points=source_points,
+                smoothed_points=smoothed_points,
+                final_points=corrected_points,
+                selected_assignment=str(hand_debug.get("selected_assignment", "A")),
+                same_score=float(hand_debug.get("same_assignment_score", float("inf"))),
+                swapped_score=float(hand_debug.get("swapped_assignment_score", float("inf"))),
+                swap_corrected=bool(hand_debug.get("hand_swap_corrected", False)),
+                rejected=bool(hand_debug.get("hand_rejected", False)),
+                used_previous=bool(hand_debug.get("hand_used_previous", False)),
+                stale_corrected=bool(stale_flags.get("stale_hand_tracking", False)),
+                stale_flags=stale_flags,
+                source_reason=frame_reasons.get(current_index, "source"),
+                correction_reason=str(hand_debug.get("hand_correction_reason", "")),
+            )
+        )
 
         dense_series[current_index] = corrected_points
 
@@ -1736,7 +1924,9 @@ def generate_pose_overlay(
 
             hand_debug_frame = _draw_hand_debug_overlay(
                 frame,
-                frame_points,
+                source_points,
+                smoothed_points,
+                corrected_points,
                 hand_debug_rows[frame_index] if frame_index < len(hand_debug_rows) else {},
             )
             hand_debug_frames.append(hand_debug_frame)
@@ -1847,12 +2037,15 @@ def generate_pose_overlay(
     average_pose_quality = round(float(np.mean(pose_quality_values)), 2) if pose_quality_values else 0.0
     left_hand_confidence = round(float(np.mean([point[2] for frame in dense_series.values() if (point := frame.get("left_wrist")) is not None])), 3) if dense_series else None
     right_hand_confidence = round(float(np.mean([point[2] for frame in dense_series.values() if (point := frame.get("right_wrist")) is not None])), 3) if dense_series else None
+    left_hand_tracking_rate = round((left_hand_tracked_frames / frames_processed) * 100.0, 2) if frames_processed else None
+    right_hand_tracking_rate = round((right_hand_tracked_frames / frames_processed) * 100.0, 2) if frames_processed else None
     quality_metrics = {
         "frames_processed": frames_processed,
         "frames_with_pose": frames_with_pose,
         "frames_interpolated": dense_metrics.get("frames_interpolated", 0),
         "frames_rejected": dense_metrics.get("frames_rejected", 0),
         "frames_missing": dense_metrics.get("frames_missing", 0),
+        "frames_with_missing_wrist_detection": corrections.get("frames_with_missing_wrist_detection", 0),
         "head_tracked_frames": head_tracked_frames,
         "ankle_corrections": correction_metrics.get("ankle_corrections", 0),
         "swap_corrections": correction_metrics.get("swap_corrections", 0),
@@ -1863,6 +2056,7 @@ def generate_pose_overlay(
         "hand_swap_corrections": correction_metrics.get("hand_swap_corrections", 0),
         "hand_rejections": correction_metrics.get("hand_rejections", 0),
         "hand_interpolations": correction_metrics.get("hand_interpolations", 0),
+        "stale_hand_corrections": correction_metrics.get("stale_hand_corrections", 0),
         "debug_frame_count": len(debug_frame_paths),
         "head_tracked_rate": round((head_tracked_frames / frames_processed) * 100.0, 2) if frames_processed else None,
         "hands_tracked_frames": hands_tracked_frames,
@@ -1870,8 +2064,12 @@ def generate_pose_overlay(
         "hand_tracking_rate": round((hands_tracked_frames / frames_processed) * 100.0, 2) if frames_processed else None,
         "hands_tracked_rate": round((hands_tracked_frames / frames_processed) * 100.0, 2) if frames_processed else None,
         "feet_tracked_rate": round((feet_tracked_frames / frames_processed) * 100.0, 2) if frames_processed else None,
+        "left_hand_tracking_rate": left_hand_tracking_rate,
+        "right_hand_tracking_rate": right_hand_tracking_rate,
         "left_hand_confidence": left_hand_confidence,
         "right_hand_confidence": right_hand_confidence,
+        "left_wrist_missing_frames": left_wrist_missing_frames,
+        "right_wrist_missing_frames": right_wrist_missing_frames,
         "average_pose_quality_score": average_pose_quality,
         "tracking_mode": tracking_mode,
     }
