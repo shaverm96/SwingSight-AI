@@ -7,6 +7,7 @@ from typing import Dict, Optional, Tuple
 
 from PIL import Image
 
+from swingsight.image_preprocessing import apply_adaptive_contrast_rgb
 from swingsight.runtime import select_yolo_device
 
 
@@ -41,9 +42,16 @@ class OcrResult:
 
 def recognize_club_from_frame(image_path: str, config: Dict) -> Dict:
     image = Image.open(image_path).convert("RGB")
+    preprocessing = config.get("preprocessing", {}) or {}
+    enhanced_image = apply_adaptive_contrast_rgb(
+        image,
+        enabled=bool(preprocessing.get("adaptive_contrast", True)),
+        clip_limit=float(preprocessing.get("adaptive_contrast_clip_limit", 2.0)),
+        tile_grid_size=tuple(preprocessing.get("adaptive_contrast_tile_grid_size", [8, 8])) if preprocessing.get("adaptive_contrast_tile_grid_size") else (8, 8),
+    )
 
-    detection = detect_club_head(image, config)
-    crop = crop_region(image, detection.bbox)
+    detection = detect_club_head(enhanced_image, config)
+    crop = crop_region(enhanced_image, detection.bbox)
     broad = classify_broad_category(crop, config)
 
     if broad.category == "wood":
@@ -168,7 +176,14 @@ def read_club_marking(image: Image.Image, config: Dict) -> OcrResult:
     settings = config.get("club_recognition", {})
     ocr_backend = settings.get("ocr_backend", "auto")
 
+    preprocessing = config.get("preprocessing", {}) or {}
     cropped = preprocess_marking_region(image)
+    cropped = apply_adaptive_contrast_rgb(
+        cropped,
+        enabled=bool(preprocessing.get("adaptive_contrast", True)),
+        clip_limit=float(preprocessing.get("adaptive_contrast_clip_limit", 2.0)),
+        tile_grid_size=tuple(preprocessing.get("adaptive_contrast_tile_grid_size", [8, 8])) if preprocessing.get("adaptive_contrast_tile_grid_size") else (8, 8),
+    )
 
     if ocr_backend in {"easyocr", "auto"}:
         text, confidence = _try_easyocr(cropped)

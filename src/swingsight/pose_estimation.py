@@ -7,6 +7,7 @@ from typing import Dict, Iterable, List, Optional, Protocol
 
 import cv2
 
+from swingsight.image_preprocessing import apply_adaptive_contrast_bgr
 from swingsight.runtime import select_yolo_device
 
 try:
@@ -72,9 +73,16 @@ class YoloPoseEstimator:
     Replace infer() with real YOLOv8-pose inference.
     """
 
-    def __init__(self, model_path: str, confidence_threshold: float) -> None:
+    def __init__(
+        self,
+        model_path: str,
+        confidence_threshold: float,
+        *,
+        preprocessing: Optional[Dict] = None,
+    ) -> None:
         self.model_path = model_path
         self.confidence_threshold = confidence_threshold
+        self.preprocessing = preprocessing or {}
         self._model = None
 
     def _load_model(self):
@@ -103,6 +111,13 @@ class YoloPoseEstimator:
             return []
 
         device = select_yolo_device()
+        contrast_enabled = bool(self.preprocessing.get("adaptive_contrast", True))
+        clip_limit = float(self.preprocessing.get("adaptive_contrast_clip_limit", 2.0))
+        tile_grid = self.preprocessing.get("adaptive_contrast_tile_grid_size", [8, 8])
+        try:
+            tile_grid_size = (int(tile_grid[0]), int(tile_grid[1]))
+        except Exception:
+            tile_grid_size = (8, 8)
 
         capture = cv2.VideoCapture(str(video_path))
         if not capture.isOpened():
@@ -124,7 +139,13 @@ class YoloPoseEstimator:
             average_confidence = 0.0
 
             try:
-                results = model.predict(frame, verbose=False, device=device)
+                processed_frame = apply_adaptive_contrast_bgr(
+                    frame,
+                    enabled=contrast_enabled,
+                    clip_limit=clip_limit,
+                    tile_grid_size=tile_grid_size,
+                )
+                results = model.predict(processed_frame, verbose=False, device=device)
                 result = results[0] if results else None
                 keypoints = getattr(result, "keypoints", None)
                 if keypoints is not None and getattr(keypoints, "xy", None) is not None:
@@ -160,10 +181,12 @@ def build_pose_estimator(config: Dict) -> PoseEstimator:
     settings = config.get("pose_estimation", {})
     backend = settings.get("backend", "dummy")
     model_path = settings.get("model_path", "")
+    preprocessing = config.get("preprocessing", {}) or {}
     if backend == "yolov8_pose" or YOLO is not None:
         return YoloPoseEstimator(
             model_path=str(model_path),
             confidence_threshold=float(settings.get("confidence_threshold", 0.4)),
+            preprocessing=preprocessing,
         )
 
     return DummyPoseEstimator()

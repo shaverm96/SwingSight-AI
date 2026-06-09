@@ -33,6 +33,11 @@ metrics:
   smoothing_window: 5
   normalize_by: torso
 
+preprocessing:
+  adaptive_contrast: true
+  adaptive_contrast_clip_limit: 2.0
+  adaptive_contrast_tile_grid_size: [8, 8]
+
 feedback:
   driver_wood:
     spine_angle_range: [30, 45]
