@@ -2,6 +2,8 @@ const state = {
   videoUploadId: null,
   analysisId: null,
   mediaStream: null,
+  selectedCameraId: null,
+  availableCameras: [],
   recording: false,
 };
 
@@ -334,7 +336,11 @@ async function initCamera() {
     if (state.mediaStream) {
       return;
     }
-    const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+    state.availableCameras = await discoverCameras();
+    const preferredCamera = state.selectedCameraId || state.availableCameras[0]?.deviceId || null;
+    const stream = await requestCameraStream(preferredCamera);
+    const trackSettings = stream.getVideoTracks()[0]?.getSettings?.() || {};
+    state.selectedCameraId = trackSettings.deviceId || preferredCamera;
     state.mediaStream = stream;
     livePreview.srcObject = stream;
     await livePreview.play();
@@ -352,6 +358,35 @@ function stopCamera() {
   state.mediaStream.getTracks().forEach((track) => track.stop());
   state.mediaStream = null;
   livePreview.srcObject = null;
+}
+
+async function discoverCameras() {
+  if (!navigator.mediaDevices?.enumerateDevices) {
+    return [];
+  }
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    return devices.filter((device) => device.kind === "videoinput");
+  } catch (err) {
+    console.warn("Unable to enumerate cameras", err);
+    return [];
+  }
+}
+
+async function requestCameraStream(deviceId) {
+  const primaryConstraints = deviceId
+    ? { video: { deviceId: { exact: deviceId } }, audio: false }
+    : { video: true, audio: false };
+
+  try {
+    return await navigator.mediaDevices.getUserMedia(primaryConstraints);
+  } catch (err) {
+    if (deviceId) {
+      console.warn("Preferred camera unavailable, falling back to default camera", err);
+      return navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+    }
+    throw err;
+  }
 }
 
 async function runGuidedCapture() {

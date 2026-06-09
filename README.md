@@ -249,6 +249,8 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
+You can also place local overrides in a `.env` file at the repository root. The app reads `SWINGSIGHT_HOST`, `SWINGSIGHT_PORT`, and `SWINGSIGHT_DEBUG` if present.
+
 Copy the sample config:
 
 ```bash
@@ -260,13 +262,25 @@ cp config.example.yaml config.yaml
 From project root:
 
 ```bash
-python app.py
+python run.py
+```
+
+Or use the platform launcher for your operating system:
+
+```bash
+./start.sh
+```
+
+On Windows:
+
+```bat
+start.bat
 ```
 
 Open the local dashboard in your browser:
 
 ```text
-http://127.0.0.1:8000
+http://localhost:8000
 ```
 
 Do not open `src/webapp/templates/dashboard.html` directly from the file system.
@@ -290,6 +304,8 @@ Notes:
 - The current club/body detectors are placeholders. Replace with YOLOv8/CNN/OCR and YOLOv8-pose for production accuracy.
 - The guided capture records a short clip automatically (approx 5s); this can be adjusted in `src/webapp/static/js/dashboard.js`.
 - The entire workflow is local-first. No credentials, cloud storage, or external services are used by default.
+
+See [PLATFORM_COMPATIBILITY_CHECKLIST.md](PLATFORM_COMPATIBILITY_CHECKLIST.md) for the Mac and Windows validation checklist.
 
 Optional OCR dependencies (not required unless you want club marking detection):
 

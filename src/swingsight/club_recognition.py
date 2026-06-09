@@ -7,6 +7,8 @@ from typing import Dict, Optional, Tuple
 
 from PIL import Image
 
+from swingsight.runtime import select_yolo_device
+
 
 @dataclass(frozen=True)
 class ClubHeadDetection:
@@ -94,7 +96,7 @@ def detect_club_head(image: Image.Image, config: Dict) -> ClubHeadDetection:
         model = _get_yolo_model(str(path))
         if model is None:
             raise RuntimeError("YOLO model not available")
-        results = model.predict(image, conf=confidence_threshold, verbose=False)
+        results = model.predict(image, conf=confidence_threshold, verbose=False, device=select_yolo_device())
         if not results:
             return ClubHeadDetection(bbox=None, confidence=0.0, source="yolov8")
         result = results[0]

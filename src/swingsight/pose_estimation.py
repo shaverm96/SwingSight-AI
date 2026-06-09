@@ -7,6 +7,8 @@ from typing import Dict, Iterable, List, Optional, Protocol
 
 import cv2
 
+from swingsight.runtime import select_yolo_device
+
 try:
     from ultralytics import YOLO
 except Exception:  # pragma: no cover - optional dependency
@@ -100,6 +102,8 @@ class YoloPoseEstimator:
             LOGGER.info("POSE backend unavailable video=%s backend=yolov8_pose loaded=false", video_path)
             return []
 
+        device = select_yolo_device()
+
         capture = cv2.VideoCapture(str(video_path))
         if not capture.isOpened():
             LOGGER.info("POSE backend unable to open video=%s backend=yolov8_pose", video_path)
@@ -120,7 +124,7 @@ class YoloPoseEstimator:
             average_confidence = 0.0
 
             try:
-                results = model.predict(frame, verbose=False)
+                results = model.predict(frame, verbose=False, device=device)
                 result = results[0] if results else None
                 keypoints = getattr(result, "keypoints", None)
                 if keypoints is not None and getattr(keypoints, "xy", None) is not None:

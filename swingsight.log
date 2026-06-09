@@ -12,34 +12,23 @@ Missing model artifact for club_detector
 Missing model artifact for swing_classifier
  * Debugger is active!
  * Debugger PIN: 451-629-467
-127.0.0.1 - - [09/Jun/2026 18:13:34] "GET / HTTP/1.1" 200 -
-127.0.0.1 - - [09/Jun/2026 18:13:34] "GET / HTTP/1.1" 200 -
-127.0.0.1 - - [09/Jun/2026 18:13:34] "[36mGET /static/css/dashboard.css?v=20260603 HTTP/1.1[0m" 304 -
-127.0.0.1 - - [09/Jun/2026 18:13:34] "GET /static/js/dashboard.js?v=20260603 HTTP/1.1" 200 -
-127.0.0.1 - - [09/Jun/2026 18:13:39] "POST /api/upload-video HTTP/1.1" 200 -
-127.0.0.1 - - [09/Jun/2026 18:13:39] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
-127.0.0.1 - - [09/Jun/2026 18:13:53] "POST /api/analyze HTTP/1.1" 200 -
-[2026-06-09 18:13:53,397] INFO in dashboard: API SERVING upload file path=/Users/mattshaver/Desktop/SwingSight-AI/uploads/video_c134df471a074c3d859f587781666725.mov mimetype=video/quicktime
-127.0.0.1 - - [09/Jun/2026 18:13:53] "[35m[1mGET /uploads/video_c134df471a074c3d859f587781666725.mov HTTP/1.1[0m" 206 -
-[2026-06-09 18:13:53,400] INFO in dashboard: API SERVING upload file path=/Users/mattshaver/Desktop/SwingSight-AI/uploads/video_c134df471a074c3d859f587781666725.mov mimetype=video/quicktime
-127.0.0.1 - - [09/Jun/2026 18:13:53] "[35m[1mGET /uploads/video_c134df471a074c3d859f587781666725.mov HTTP/1.1[0m" 206 -
-[2026-06-09 18:13:54,784] INFO in dashboard: API SERVING overlay file path=/Users/mattshaver/Desktop/SwingSight-AI/outputs/overlays/video_c134df471a074c3d859f587781666725_overlay_smoothed.mp4 mimetype=video/mp4
-127.0.0.1 - - [09/Jun/2026 18:13:54] "[35m[1mGET /outputs/overlays/video_c134df471a074c3d859f587781666725_overlay_smoothed.mp4 HTTP/1.1[0m" 206 -
-[2026-06-09 18:13:54,790] INFO in dashboard: API SERVING overlay file path=/Users/mattshaver/Desktop/SwingSight-AI/outputs/overlays/video_c134df471a074c3d859f587781666725_overlay_smoothed.mp4 mimetype=video/mp4
-127.0.0.1 - - [09/Jun/2026 18:13:54] "[35m[1mGET /outputs/overlays/video_c134df471a074c3d859f587781666725_overlay_smoothed.mp4 HTTP/1.1[0m" 206 -
- * Detected change in '/Users/mattshaver/Desktop/SwingSight-AI/src/swingsight/metrics.py', reloading
- * Restarting with stat
-Missing model artifact for club_classifier
-Missing model artifact for club_detector
-Missing model artifact for swing_classifier
- * Debugger is active!
- * Debugger PIN: 451-629-467
- * Detected change in '/Users/mattshaver/Desktop/SwingSight-AI/src/swingsight/metrics.py', reloading
- * Restarting with stat
-Missing model artifact for club_classifier
-Missing model artifact for club_detector
-Missing model artifact for swing_classifier
- * Debugger is active!
- * Debugger PIN: 451-629-467
-/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/multiprocessing/resource_tracker.py:400: UserWarning: resource_tracker: There appear to be 1 leaked semaphore objects to clean up at shutdown: {'/loky-66145-b6776z_n'}
+127.0.0.1 - - [09/Jun/2026 18:30:24] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [09/Jun/2026 18:30:24] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [09/Jun/2026 18:30:24] "[36mGET /static/css/dashboard.css?v=20260603 HTTP/1.1[0m" 304 -
+127.0.0.1 - - [09/Jun/2026 18:30:24] "GET /static/js/dashboard.js?v=20260603 HTTP/1.1" 200 -
+127.0.0.1 - - [09/Jun/2026 18:30:24] "[33mGET /apple-touch-icon-precomposed.png HTTP/1.1[0m" 404 -
+127.0.0.1 - - [09/Jun/2026 18:30:24] "[33mGET /apple-touch-icon.png HTTP/1.1[0m" 404 -
+127.0.0.1 - - [09/Jun/2026 18:30:24] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
+127.0.0.1 - - [09/Jun/2026 18:30:28] "POST /api/upload-video HTTP/1.1" 200 -
+127.0.0.1 - - [09/Jun/2026 18:30:28] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
+127.0.0.1 - - [09/Jun/2026 18:30:42] "POST /api/analyze HTTP/1.1" 200 -
+[2026-06-09 18:30:42,735] INFO in dashboard: API SERVING upload file path=/Users/mattshaver/Desktop/SwingSight-AI/uploads/video_29591b489d0245878088078a10bced77.mov mimetype=video/quicktime
+127.0.0.1 - - [09/Jun/2026 18:30:42] "[35m[1mGET /uploads/video_29591b489d0245878088078a10bced77.mov HTTP/1.1[0m" 206 -
+[2026-06-09 18:30:42,738] INFO in dashboard: API SERVING upload file path=/Users/mattshaver/Desktop/SwingSight-AI/uploads/video_29591b489d0245878088078a10bced77.mov mimetype=video/quicktime
+127.0.0.1 - - [09/Jun/2026 18:30:42] "[35m[1mGET /uploads/video_29591b489d0245878088078a10bced77.mov HTTP/1.1[0m" 206 -
+[2026-06-09 18:30:51,440] INFO in dashboard: API SERVING overlay file path=/Users/mattshaver/Desktop/SwingSight-AI/outputs/overlays/video_29591b489d0245878088078a10bced77_overlay_smoothed.mp4 mimetype=video/mp4
+127.0.0.1 - - [09/Jun/2026 18:30:51] "[35m[1mGET /outputs/overlays/video_29591b489d0245878088078a10bced77_overlay_smoothed.mp4 HTTP/1.1[0m" 206 -
+[2026-06-09 18:30:51,448] INFO in dashboard: API SERVING overlay file path=/Users/mattshaver/Desktop/SwingSight-AI/outputs/overlays/video_29591b489d0245878088078a10bced77_overlay_smoothed.mp4 mimetype=video/mp4
+127.0.0.1 - - [09/Jun/2026 18:30:51] "[35m[1mGET /outputs/overlays/video_29591b489d0245878088078a10bced77_overlay_smoothed.mp4 HTTP/1.1[0m" 206 -
+/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/multiprocessing/resource_tracker.py:400: UserWarning: resource_tracker: There appear to be 1 leaked semaphore objects to clean up at shutdown: {'/loky-66713-n8x9c4y5'}
   warnings.warn(
