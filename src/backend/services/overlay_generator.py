@@ -491,6 +491,75 @@ def _point_inside_bbox(point: tuple[int, int, float] | None, bbox: tuple[int, in
     return (left - margin_px) <= x <= (right + margin_px) and (top - margin_px) <= y <= (bottom + margin_px)
 
 
+def _normalize_vector(dx: float, dy: float) -> tuple[float, float]:
+    length = float(np.hypot(dx, dy))
+    if length <= 1e-6:
+        return 0.0, 0.0
+    return dx / length, dy / length
+
+
+def _estimate_wrist_from_arm(
+    wrist_name: str,
+    current_points: Dict[str, tuple[int, int, float]],
+    previous_points: Dict[str, tuple[int, int, float]],
+    *,
+    width: int,
+    height: int,
+) -> tuple[int, int, float] | None:
+    side = wrist_name.split("_")[0]
+    current_elbow = current_points.get(f"{side}_elbow") or previous_points.get(f"{side}_elbow")
+    current_shoulder = current_points.get(f"{side}_shoulder") or previous_points.get(f"{side}_shoulder")
+    previous_wrist = previous_points.get(wrist_name)
+    previous_elbow = previous_points.get(f"{side}_elbow")
+
+    if current_elbow is None or previous_wrist is None:
+        return None
+
+    forearm_length = _distance_score(previous_wrist, previous_elbow) if previous_elbow is not None else _distance_score(previous_wrist, current_elbow)
+    if not np.isfinite(forearm_length) or forearm_length <= 1.0:
+        forearm_length = max(18.0, float(min(width, height)) * 0.08)
+
+    if current_shoulder is not None and previous_elbow is not None:
+        upper_vec = _normalize_vector(current_elbow[0] - current_shoulder[0], current_elbow[1] - current_shoulder[1])
+        previous_forearm = _normalize_vector(previous_wrist[0] - previous_elbow[0], previous_wrist[1] - previous_elbow[1])
+        blend_x = (upper_vec[0] * 0.45) + (previous_forearm[0] * 0.55)
+        blend_y = (upper_vec[1] * 0.45) + (previous_forearm[1] * 0.55)
+        direction_x, direction_y = _normalize_vector(blend_x, blend_y)
+        if direction_x == 0.0 and direction_y == 0.0:
+            direction_x, direction_y = previous_forearm
+    else:
+        direction_x, direction_y = _normalize_vector(previous_wrist[0] - current_elbow[0], previous_wrist[1] - current_elbow[1])
+
+    if direction_x == 0.0 and direction_y == 0.0:
+        return None
+
+    estimated_x = int(round(current_elbow[0] + (direction_x * forearm_length)))
+    estimated_y = int(round(current_elbow[1] + (direction_y * forearm_length)))
+    confidence = float(max(0.22, min(0.62, previous_wrist[2] * 0.8)))
+    return estimated_x, estimated_y, confidence
+
+
+def _wrist_arm_geometry_ok(
+    wrist: tuple[int, int, float] | None,
+    elbow: tuple[int, int, float] | None,
+    shoulder: tuple[int, int, float] | None,
+    *,
+    reference: float,
+) -> bool:
+    if wrist is None or elbow is None or shoulder is None:
+        return False
+    upper_arm = _distance_score(shoulder, elbow)
+    forearm = _distance_score(elbow, wrist)
+    arm_total = upper_arm + forearm
+    if not np.isfinite(arm_total):
+        return False
+    if arm_total < reference * 0.35 or arm_total > reference * 2.7:
+        return False
+    if forearm > reference * 1.6:
+        return False
+    return True
+
+
 def _refresh_stale_hand_tracking(
     current_points: Dict[str, tuple[int, int, float]],
     raw_points: Dict[str, tuple[int, int, float]],
@@ -1012,6 +1081,7 @@ def _resolve_hand_assignment(
     hand_swap_corrections = 0
     hand_rejections = 0
     hand_interpolations = 0
+    hand_recoveries = 0
 
     same_candidate = dict(resolved)
     swapped_candidate = dict(resolved)
@@ -1064,10 +1134,27 @@ def _resolve_hand_assignment(
         shoulder_point = selected_candidate.get(shoulder_name)
         previous_wrist = previous_points.get(wrist_name)
         wrist_inside_person = _point_inside_bbox(wrist_point, person_bbox, margin_px=max(10.0, width * 0.02))
+        estimated_wrist = _estimate_wrist_from_arm(
+            wrist_name,
+            selected_candidate,
+            previous_points,
+            width=width,
+            height=height,
+        )
 
         if wrist_point is None or wrist_point[2] < confidence_threshold or elbow_point is None or shoulder_point is None or not wrist_inside_person:
-            if previous_wrist is not None and previous_wrist[2] >= max(0.2, confidence_threshold * 0.75):
-                if _point_inside_bbox(previous_wrist, person_bbox, margin_px=max(10.0, width * 0.02)):
+            if estimated_wrist is not None and _wrist_arm_geometry_ok(estimated_wrist, elbow_point, shoulder_point, reference=hand_reference) and _point_inside_bbox(estimated_wrist, person_bbox, margin_px=max(10.0, width * 0.02)):
+                selected_candidate[wrist_name] = estimated_wrist
+                used_previous = True
+                hand_interpolations += 1
+                hand_recoveries += 1
+                selected_reasons.append(f"{side}_wrist_arm_recovered")
+                if side == "left":
+                    left_used_previous = True
+                else:
+                    right_used_previous = True
+            elif previous_wrist is not None and previous_wrist[2] >= max(0.2, confidence_threshold * 0.75):
+                if _point_inside_bbox(previous_wrist, person_bbox, margin_px=max(10.0, width * 0.02)) and _wrist_arm_geometry_ok(previous_wrist, elbow_point, shoulder_point, reference=hand_reference):
                     selected_candidate[wrist_name] = previous_wrist
                     used_previous = True
                     hand_interpolations += 1
@@ -1096,7 +1183,17 @@ def _resolve_hand_assignment(
             arm_geometry_reasonable = hand_reference * 0.45 <= arm_total <= hand_reference * 2.1 and _distance_score(wrist_point, elbow_point) <= hand_reference * 1.5 and wrist_inside_person
 
             if wrist_jump and not arm_geometry_reasonable:
-                if previous_wrist is not None and previous_wrist[2] >= max(0.2, confidence_threshold * 0.75) and _point_inside_bbox(previous_wrist, person_bbox, margin_px=max(10.0, width * 0.02)):
+                if estimated_wrist is not None and _wrist_arm_geometry_ok(estimated_wrist, elbow_point, shoulder_point, reference=hand_reference) and _point_inside_bbox(estimated_wrist, person_bbox, margin_px=max(10.0, width * 0.02)):
+                    selected_candidate[wrist_name] = estimated_wrist
+                    used_previous = True
+                    hand_interpolations += 1
+                    hand_recoveries += 1
+                    selected_reasons.append(f"{side}_wrist_arm_recovered")
+                    if side == "left":
+                        left_used_previous = True
+                    else:
+                        right_used_previous = True
+                elif previous_wrist is not None and previous_wrist[2] >= max(0.2, confidence_threshold * 0.75) and _point_inside_bbox(previous_wrist, person_bbox, margin_px=max(10.0, width * 0.02)):
                     selected_candidate[wrist_name] = previous_wrist
                     used_previous = True
                     hand_interpolations += 1
@@ -1159,6 +1256,7 @@ def _resolve_hand_assignment(
         "hand_swap_corrections": hand_swap_corrections,
         "hand_rejections": hand_rejections,
         "hand_interpolations": hand_interpolations,
+        "hand_recoveries": hand_recoveries,
         "debug_record": debug_record,
     }
 
@@ -1461,7 +1559,7 @@ def _build_dense_pose_series(
     debug_frames_dir: Path | None = None,
 ) -> tuple[Dict[int, Dict[str, tuple[int, int, float]]], Dict[str, int], Dict[str, int], list[Dict[str, Any]], list[Dict[str, Any]]]:
     if not pose_frames:
-        return {}, {"frames_interpolated": 0, "frames_rejected": 0, "frames_missing": 0}, {"ankle_corrections": 0, "swap_corrections": 0, "knee_swap_corrections": 0, "foot_swap_corrections": 0, "lower_body_rejections": 0, "lower_body_interpolations": 0, "hand_swap_corrections": 0, "hand_rejections": 0, "hand_interpolations": 0, "stale_hand_corrections": 0, "frames_with_missing_wrist_detection": 0}, [], []
+        return {}, {"frames_interpolated": 0, "frames_rejected": 0, "frames_missing": 0}, {"ankle_corrections": 0, "swap_corrections": 0, "knee_swap_corrections": 0, "foot_swap_corrections": 0, "lower_body_rejections": 0, "lower_body_interpolations": 0, "hand_swap_corrections": 0, "hand_rejections": 0, "hand_interpolations": 0, "hand_recoveries": 0, "stale_hand_corrections": 0, "frames_with_missing_wrist_detection": 0}, [], []
 
     frame_points: Dict[int, Dict[str, tuple[int, int, float]]] = {}
     frame_reasons: Dict[int, str] = {}
@@ -1471,7 +1569,7 @@ def _build_dense_pose_series(
 
     dense_series: Dict[int, Dict[str, tuple[int, int, float]]] = {}
     metrics = {"frames_interpolated": 0, "frames_rejected": 0, "frames_missing": 0}
-    corrections = {"ankle_corrections": 0, "swap_corrections": 0, "knee_swap_corrections": 0, "foot_swap_corrections": 0, "lower_body_rejections": 0, "lower_body_interpolations": 0, "hand_swap_corrections": 0, "hand_rejections": 0, "hand_interpolations": 0, "stale_hand_corrections": 0, "frames_with_missing_wrist_detection": 0}
+    corrections = {"ankle_corrections": 0, "swap_corrections": 0, "knee_swap_corrections": 0, "foot_swap_corrections": 0, "lower_body_rejections": 0, "lower_body_interpolations": 0, "hand_swap_corrections": 0, "hand_rejections": 0, "hand_interpolations": 0, "hand_recoveries": 0, "stale_hand_corrections": 0, "frames_with_missing_wrist_detection": 0}
     debug_rows: list[Dict[str, Any]] = []
     hand_debug_rows: list[Dict[str, Any]] = []
     previous_valid: Dict[str, tuple[int, int, float]] = {}
@@ -1569,6 +1667,7 @@ def _build_dense_pose_series(
         )
         corrections["hand_swap_corrections"] += int(hand_summary.get("hand_swap_corrections", 0))
         corrections["hand_rejections"] += int(hand_summary.get("hand_rejections", 0))
+        corrections["hand_recoveries"] += int(hand_summary.get("hand_recoveries", 0))
         hand_debug = dict(hand_summary.get("debug_record", {}))
 
         missing_wrist_frame = False
@@ -2124,6 +2223,8 @@ def generate_pose_overlay(
     hand_debug_video_url = None
     hand_background_debug_video_path = None
     hand_background_debug_video_url = None
+    wrist_tracking_debug_video_path = None
+    wrist_tracking_debug_video_url = None
     if tracking_debug_frames:
         tracking_debug_path = overlay_root / f"{video_file.stem}_tracking_debug.mp4"
         tracking_debug_video_path = save_overlay_video(tracking_debug_frames, tracking_debug_path, fps, frame_size)
@@ -2136,6 +2237,9 @@ def generate_pose_overlay(
         hand_debug_path = overlay_root / "hand_tracking_debug.mp4"
         hand_debug_video_path = save_overlay_video(hand_debug_frames, hand_debug_path, fps, frame_size)
         hand_debug_video_url = f"/outputs/overlays/{Path(hand_debug_video_path).name}"
+        wrist_debug_path = overlay_root / "wrist_tracking_debug.mp4"
+        wrist_tracking_debug_video_path = save_overlay_video(hand_debug_frames, wrist_debug_path, fps, frame_size)
+        wrist_tracking_debug_video_url = f"/outputs/overlays/{Path(wrist_tracking_debug_video_path).name}"
         hand_background_debug_path = overlay_root / "hand_background_debug.mp4"
         hand_background_debug_video_path = save_overlay_video(hand_debug_frames, hand_background_debug_path, fps, frame_size)
         hand_background_debug_video_url = f"/outputs/overlays/{Path(hand_background_debug_video_path).name}"
@@ -2175,6 +2279,8 @@ def generate_pose_overlay(
         "hand_swap_corrections": correction_metrics.get("hand_swap_corrections", 0),
         "hand_rejections": correction_metrics.get("hand_rejections", 0),
         "hand_interpolations": correction_metrics.get("hand_interpolations", 0),
+        "hand_recoveries": correction_metrics.get("hand_recoveries", 0),
+        "wrist_recovery_count": correction_metrics.get("hand_recoveries", 0) + correction_metrics.get("stale_hand_corrections", 0),
         "stale_hand_corrections": correction_metrics.get("stale_hand_corrections", 0),
         "stale_background_detected": bool(sum(1 for row in hand_debug_rows if row.get("stale_background_detected"))),
         "debug_frame_count": len(debug_frame_paths),
@@ -2243,9 +2349,10 @@ def generate_pose_overlay(
         "hand_background_debug_csv": str(hand_tracking_experiments_csv_path) if hand_tracking_experiments_csv_path.exists() else None,
         "hand_background_debug_video_path": hand_background_debug_video_path,
         "hand_background_debug_video_url": hand_background_debug_video_url,
-        "hand_background_debug_video_path": hand_background_debug_video_path,
-        "hand_background_debug_video_url": hand_background_debug_video_url,
+        "wrist_tracking_debug_video_path": wrist_tracking_debug_video_path,
+        "wrist_tracking_debug_video_url": wrist_tracking_debug_video_url,
         "hand_background_debug_csv": str(hand_tracking_experiments_csv_path) if hand_tracking_experiments_csv_path.exists() else None,
+        "wrist_tracking_debug_csv": str(hand_tracking_experiments_csv_path) if hand_tracking_experiments_csv_path.exists() else None,
         "frames_processed": frames_processed,
         "frames_with_pose": frames_with_pose,
         "detection_rate": detection_rate,
