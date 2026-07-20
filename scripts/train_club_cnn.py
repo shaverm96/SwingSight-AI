@@ -34,6 +34,7 @@ TASK_CLASSES = {
     "broad_category": ("iron", "wood"),
     "iron_number": tuple(str(number) for number in range(1, 10)),
     "wood_type": ("driver", "wood", "hybrid"),
+    "club_type_5way": ("driver", "wood", "hybrid", "iron", "wedge"),
 }
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 

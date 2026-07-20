@@ -26,7 +26,7 @@ except Exception:  # pragma: no cover - exercised only in minimal installations
 
 
 CHECKPOINT_FORMAT = "swingsight_club_cnn_v1"
-SUPPORTED_TASKS = {"broad_category", "iron_number", "wood_type"}
+SUPPORTED_TASKS = {"broad_category", "iron_number", "wood_type", "club_type_5way"}
 DEFAULT_INPUT_SIZE = 224
 DEFAULT_MEAN = (0.485, 0.456, 0.406)
 DEFAULT_STD = (0.229, 0.224, 0.225)
