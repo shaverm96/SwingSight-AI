@@ -24,6 +24,11 @@ except Exception:  # pragma: no cover - exercised only in minimal installations
     Tensor = Any
     nn = None
 
+try:
+    from torchvision.models import mobilenet_v3_small
+except Exception:  # pragma: no cover - exercised only in minimal installations
+    mobilenet_v3_small = None
+
 
 CHECKPOINT_FORMAT = "swingsight_club_cnn_v1"
 SUPPORTED_TASKS = {"broad_category", "iron_number", "wood_type", "club_type_5way"}
@@ -84,6 +89,16 @@ else:  # pragma: no cover - allows importing this module without torch
         def __init__(self, num_classes: int) -> None:
             _ = num_classes
             raise RuntimeError("PyTorch is required to create a ClubCnnModel.")
+
+
+def build_mobilenet_v3_small(num_classes: int) -> Any:
+    """Build the checkpoint-compatible MobileNetV3-Small classifier."""
+
+    if torch is None or nn is None or mobilenet_v3_small is None:
+        raise RuntimeError("PyTorch and torchvision are required for MobileNetV3-Small.")
+    model = mobilenet_v3_small(weights=None)
+    model.classifier[-1] = nn.Linear(model.classifier[-1].in_features, num_classes)
+    return model
 
 
 @dataclass(frozen=True)
@@ -214,7 +229,13 @@ def _load_checkpoint(path_string: str, expected_task: str) -> _LoadedCheckpoint:
     mean = _numeric_triplet(checkpoint.get("mean", DEFAULT_MEAN), "mean")
     std = _numeric_triplet(checkpoint.get("std", DEFAULT_STD), "std")
     device = _torch_device()
-    model = ClubCnnModel(len(class_names))
+    architecture = checkpoint.get("architecture", "club_cnn_small_v1")
+    if architecture == "mobilenet_v3_small_v1":
+        model = build_mobilenet_v3_small(len(class_names))
+    elif architecture == "club_cnn_small_v1":
+        model = ClubCnnModel(len(class_names))
+    else:
+        raise ValueError(f"unsupported checkpoint architecture: {architecture}")
     model.load_state_dict(state_dict, strict=True)
     model.to(device)
     model.eval()
