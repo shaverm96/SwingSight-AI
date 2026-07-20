@@ -546,24 +546,12 @@ class ModelManager:
         return sorted(dict.fromkeys(fallback[:5]))
 
     def detect_club(self, frame: str | Path) -> Dict[str, Any]:
-        if not self.models.get("club_detector", {}).get("available", False):
-            return {
-                "club": "Not detected",
-                "detected_club": "Not detected",
-                "confidence": 0.0,
-                "status": "not_detected",
-                "bbox": None,
-                "reasoning": self._fallback_club_note(),
-                "sources": {"detector": "missing"},
-                "raw": {},
-            }
-
         frame_path = Path(frame)
         result = recognize_club_from_frame(str(frame_path), self.config)
         predicted_club = result.get("predicted_club") or result.get("category")
         confidence = float(result.get("confidence", 0.0))
-        threshold = float(self.config.get("club_recognition", {}).get("detector_confidence_threshold", 0.6))
-        if not predicted_club or confidence < threshold:
+        threshold = float(self.config.get("club_recognition", {}).get("confirm_threshold", 0.6))
+        if predicted_club == "Unknown" or not predicted_club or confidence < threshold:
             predicted_club = "Not detected"
         return {
             "club": predicted_club,

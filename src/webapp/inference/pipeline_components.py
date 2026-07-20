@@ -6,7 +6,7 @@ from typing import Dict, List, Optional
 import numpy as np
 import pandas as pd
 
-from swingsight.club_detection import CLUB_CATEGORIES, detect_club_category
+from swingsight.club_detection import CLUB_CATEGORIES
 from swingsight.club_recognition import predicted_to_category, recognize_club_from_frame
 from swingsight.feedback import generate_feedback_sections
 from swingsight.metrics import compute_swing_metrics
@@ -16,7 +16,13 @@ from swingsight.visualization import render_annotated_video
 
 def _classify_club_recognition(recognition: Dict) -> Dict:
     detected_category = str(recognition.get("detected_category", "Iron/Wedge"))
-    broad_category = "wood" if detected_category.lower().startswith("wood") else "iron_wedge"
+    normalized = detected_category.lower()
+    if normalized.startswith("wood"):
+        broad_category = "wood"
+    elif normalized.startswith("iron"):
+        broad_category = "iron_wedge"
+    else:
+        broad_category = "unknown"
     recognition["category"] = predicted_to_category(recognition.get("predicted_club"), broad_category)
     return recognition
 
@@ -38,10 +44,7 @@ def run_club_detection(club_image_path: Optional[str], config: Dict) -> Dict:
 
 
 def detect_club_from_frame(frame_path: str, config: Dict) -> Dict:
-    """Detect club from a single image frame. Returns category, confidence.
-
-    Placeholder: calls run_club_detection which currently returns a dummy result.
-    """
+    """Run the complete staged club-recognition pipeline on one frame."""
     return _classify_club_recognition(recognize_club_from_frame(frame_path, config))
 
 
@@ -80,31 +83,42 @@ def check_body_visibility_from_frame(frame_path: str, config: Dict) -> Dict:
 
 
 def classify_club_category(club_image_path: Optional[str], detected_category: str, config: Dict) -> Dict:
-    """Placeholder CNN classifier for finer club category classification."""
-    _ = club_image_path
-    _ = config
-    # TODO: Connect a trained CNN classifier for exact club-type probabilities.
+    """Return the staged CNN category and probabilities for a club image."""
+
+    _ = detected_category  # The stage-one CNN owns the iron/wood decision.
+    if not club_image_path:
+        return {
+            "category": "iron_wedge",
+            "probabilities": {},
+            "source": "cnn_missing_image",
+        }
+
+    recognition = _classify_club_recognition(recognize_club_from_frame(club_image_path, config))
     return {
-        "category": detected_category,
-        "probabilities": {
-            "driver_wood": 0.2,
-            "hybrid": 0.2,
-            "iron_wedge": 0.6,
-        },
-        "source": "cnn_stub",
+        "category": recognition["category"],
+        "probabilities": recognition.get("probabilities", {}),
+        "source": recognition.get("sources", {}).get("broad_classifier", "cnn"),
     }
 
 
 def recognize_loft_or_number(club_image_path: Optional[str], config: Dict) -> Dict:
-    """OCR/custom-classifier placeholder for club number or loft extraction."""
-    _ = club_image_path
-    _ = config
-    # TODO: Integrate OCR (e.g., EasyOCR/Tesseract) or custom image classifier here.
+    """Return the number-stage CNN result when the submitted club is an iron."""
+
+    if not club_image_path:
+        return {
+            "recognized_text": None,
+            "normalized_loft_or_number": None,
+            "confidence": 0.0,
+            "source": "cnn_missing_image",
+        }
+
+    recognition = recognize_club_from_frame(club_image_path, config)
+    number = recognition.get("ocr") or {}
     return {
-        "recognized_text": None,
-        "normalized_loft_or_number": None,
-        "confidence": 0.0,
-        "source": "ocr_stub",
+        "recognized_text": number.get("text"),
+        "normalized_loft_or_number": number.get("text"),
+        "confidence": float(number.get("confidence", 0.0)),
+        "source": number.get("source", "not_applicable"),
     }
 
 

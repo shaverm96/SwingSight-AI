@@ -24,10 +24,16 @@ club_recognition:
   yolo_class_name:
   detector_confidence_threshold: 0.4
   confirm_threshold: 0.6
-  wood_aspect_threshold: 1.15
-  driver_area_threshold: 0.08
-  fairway_area_threshold: 0.05
-  ocr_backend: auto
+  # Stage 1: class_names must be iron and wood (or one of the documented aliases).
+  broad_cnn_model_path: models/trained/club_broad_cnn.pt
+  broad_cnn_min_confidence: 0.55
+  # Stage 2 for an iron: class_names 1 through 9.  The model sees the lower
+  # center marking crop from the detected club head.
+  iron_number_cnn_model_path: models/trained/club_iron_number_cnn.pt
+  iron_number_cnn_min_confidence: 0.55
+  # Stage 3 for a wood: class_names driver, wood, and hybrid.
+  wood_type_cnn_model_path: models/trained/club_wood_type_cnn.pt
+  wood_type_cnn_min_confidence: 0.55
 
 metrics:
   smoothing_window: 5

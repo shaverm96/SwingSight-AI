@@ -80,6 +80,7 @@ SwingSight-AI/
     test_smoke.py
   notebooks/
     01_golfdb_video_model_training.ipynb
+    02_authorized_driver_dataset_builder.ipynb
   data/
     raw/
     processed/
@@ -117,6 +118,10 @@ pip install kagglehub opencv-python ultralytics torch torchvision pandas numpy s
 ```
 
 If you use the Kaggle API directly, place `kaggle.json` in `~/.kaggle/` before downloading.
+
+### Authorized driver-head dataset notebook
+
+[notebooks/02_authorized_driver_dataset_builder.ipynb](notebooks/02_authorized_driver_dataset_builder.ipynb) prepares driver-head images for the `wood_type` classifier. USGA's terms prohibit automated scraping of its services, so the notebook deliberately does not crawl or enumerate the Equipment Database. It accepts only a direct-image manifest supplied under USGA's written authorization or an official export, enforces the approved manufacturer list, records provenance, validates images, removes exact duplicates, and makes model-grouped train/validation/test splits.
 
 ## Backend Endpoints
 
@@ -189,33 +194,49 @@ The backend returns a summary payload for the main UI and a separate `advanced` 
 
 ## Club Recognition Decision Tree
 
-The club recognition pipeline is staged and local-first. It takes a camera frame, crops the club head, then branches based on a broad category classifier:
+The club recognition pipeline is staged and local-first. It crops the club head with YOLOv8 when detector weights are available, then uses three checkpoint-backed CNN processes.
 
-1. Detect club head region (YOLOv8 stub)
-2. Classify broad category
-  - Wood-style
-  - Iron/Wedge-style
-3. Branch by category
-  - Wood-style: estimate head size
-    - Large head -> Driver
-    - Medium head -> Fairway Wood
-    - Small head -> Hybrid
-  - Iron/Wedge-style: read marking via OCR
-    - 1-9 -> Iron (e.g., 7 Iron)
-    - > 40 -> Wedge (e.g., 56° Wedge)
-    - S/SW/A/AW/P/PW -> Wedge
-4. Confirm club with confidence threshold and report result to the UI
+1. **Broad-category CNN** classifies the head as `iron` or `wood`.
+2. **Iron-number CNN** runs only for an iron. It sees the lower-center marking crop and returns one of `1` through `9`, producing labels such as `7 Iron`.
+3. **Wood-type CNN** runs only for a wood and returns `Driver`, `Wood`, or `Hybrid`.
+
+The final confidence weights the detector (15%) and the two CNN decisions (42.5% each). A missing, mismatched, or low-confidence model never falls back to a shape or size guess: the response is `unavailable` or `uncertain` with the precise reason. If a YOLO club-head model is not installed, the CNNs may classify the submitted frame directly; train with the same framing if you intend to use this fallback.
 
 ## Club Recognition Module Structure
 
-The staged pipeline is implemented in [src/swingsight/club_recognition.py](src/swingsight/club_recognition.py):
+The staged pipeline is implemented in [src/swingsight/club_recognition.py](src/swingsight/club_recognition.py), with the model architecture, checkpoint validation, and inference preprocessing in [src/swingsight/club_cnn.py](src/swingsight/club_cnn.py):
 
-- `detect_club_head()` -> YOLOv8 detection stub (replace with weights in `models/`)
-- `classify_broad_category()` -> CNN stub for Wood vs Iron/Wedge
-- `estimate_wood_size()` -> Driver/Fairway/Hybrid heuristic
-- `read_club_marking()` -> OCR stub (EasyOCR/Tesseract if installed)
-- `interpret_marking()` -> rule-based iron/wedge mapping
+- `classify_broad_category()` -> iron vs wood CNN
+- `classify_iron_number()` -> 1-9 CNN on the marking crop
+- `classify_wood_type()` -> Driver/Wood/Hybrid CNN
 - `recognize_club_from_frame()` -> orchestrates the decision tree
+
+### Training the Three Club CNNs
+
+No labelled club-image data or trained club CNN weights are committed to this repository. Create the following data layout, keeping the camera framing consistent with live capture. Store club-head crops for `broad_category` and `wood_type`; for `iron_number`, use a close-up where the stamped number is readable. Depending on the club design, this can be the face, sole, or rear cavity—not the grip-end butt cap.
+
+```text
+data/club_cnn/
+  broad_category/
+    train/{iron,wood}/
+    val/{iron,wood}/
+  iron_number/
+    train/{1,2,3,4,5,6,7,8,9}/
+    val/{1,2,3,4,5,6,7,8,9}/
+  wood_type/
+    train/{driver,wood,hybrid}/
+    val/{driver,wood,hybrid}/
+```
+
+Train one model per stage, then keep the output names that are already referenced by `config.example.yaml`:
+
+```bash
+python scripts/train_club_cnn.py --task broad_category --data-dir data/club_cnn/broad_category --output models/trained/club_broad_cnn.pt
+python scripts/train_club_cnn.py --task iron_number --data-dir data/club_cnn/iron_number --output models/trained/club_iron_number_cnn.pt
+python scripts/train_club_cnn.py --task wood_type --data-dir data/club_cnn/wood_type --output models/trained/club_wood_type_cnn.pt
+```
+
+The checkpoints embed their task, class order, preprocessing values, and validation accuracy. Inference rejects a checkpoint assigned to the wrong stage, so an iron-number model cannot accidentally be used as a wood-type model.
 
 ## Club Recognition API Response (Example)
 
@@ -228,12 +249,13 @@ The staged pipeline is implemented in [src/swingsight/club_recognition.py](src/s
     "detected_category": "Wood",
     "predicted_club": "Driver",
     "confidence": 0.72,
-    "reasoning": "wide head aspect detected; large rounded head detected",
+    "reasoning": "broad_category CNN predicted wood; wood_type CNN predicted driver",
     "bbox": [120, 80, 420, 320],
     "ocr": null,
     "sources": {
       "detector": "yolov8",
-      "broad_classifier": "cnn_stub"
+      "broad_classifier": "cnn",
+      "wood_type_classifier": "cnn"
     }
   }
 }
