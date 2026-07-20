@@ -28,6 +28,18 @@ Why Flask is a strong fit for this project:
 
 FastAPI is also excellent, but Flask is better here for a lightweight local dashboard foundation where synchronous request flow and simple template/static serving are enough.
 
+### CUDA acceleration
+
+This project is configured for the local NVIDIA RTX 4070 SUPER. The requirements
+file pins the CUDA 12.8 PyTorch build, so a fresh environment does not silently
+install the CPU-only wheel. Verify GPU access after dependency installation:
+
+    python -c "import torch; print(torch.cuda.is_available(), torch.cuda.get_device_name(0))"
+
+The CNN uses cuda:0 and the YOLO paths use device 0 whenever CUDA is available.
+The five-way CNN training notebook requires CUDA and stops with a clear error
+instead of silently training on CPU.
+
 ## Updated Project Structure
 
 ```text

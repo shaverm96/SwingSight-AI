@@ -3,6 +3,7 @@ from __future__ import annotations
 from PIL import Image
 
 import swingsight.club_recognition as club_recognition
+from swingsight.club_cnn import SUPPORTED_TASKS
 
 
 def _image_path(tmp_path):
@@ -85,3 +86,7 @@ def test_label_normalization_accepts_checkpoint_label_variants():
     assert club_recognition.normalize_iron_number("10") is None
     assert club_recognition.normalize_wood_type("fairway_wood") == "Wood"
     assert club_recognition.normalize_wood_type("hybrid") == "Hybrid"
+
+
+def test_five_way_club_type_checkpoint_task_is_supported():
+    assert "club_type_5way" in SUPPORTED_TASKS
