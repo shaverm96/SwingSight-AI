@@ -111,6 +111,15 @@ def build_gemini_evidence(analysis: Dict[str, Any], conventional_coaching: Dict[
     if tracking_quality.get("frames_with_pose") is None and pose_frames is not None:
         tracking_quality["frames_with_pose"] = pose_frames
 
+    measured_body_metrics = {
+        key: value for key, value in body_movement.items()
+        if isinstance(value, (int, float)) and not isinstance(value, bool) and _number(value) is not None
+    }
+    score_eligible = bool(
+        (_number(tracking_quality.get("frames_with_pose")) or 0) >= 24
+        and len(measured_body_metrics) >= 3
+    )
+
     unavailable: list[str] = []
     if not speed:
         unavailable.append("No measured club or hand speed was provided by the vision pipeline.")
@@ -130,6 +139,12 @@ def build_gemini_evidence(analysis: Dict[str, Any], conventional_coaching: Dict[
         "speed": speed,
         "impact_and_ball": impact,
         "tracking_quality": tracking_quality,
+        "scoring_eligibility": {
+            "eligible": score_eligible,
+            "pose_frames": int(_number(tracking_quality.get("frames_with_pose")) or 0),
+            "measured_body_metrics": sorted(measured_body_metrics.keys()),
+            "rule": "Score when at least 24 pose frames and three numeric body-movement measurements are available.",
+        },
         "existing_local_coaching": {
             "strengths": conventional_coaching.get("strengths", []),
             "improvements": conventional_coaching.get("improvements", []),
@@ -152,11 +167,12 @@ Rules:
   encouraging.
 - Do not provide medical, injury, or equipment-fit advice.
 - Give a maximum of three strengths, three improvements, three tips, and three drills.
-- Score only observed body-movement evidence on a 0-100 scale. Set overall_score
-  to null when there are fewer than three body-movement measurements or no pose
-  frames were tracked. Never use unavailable speed, ball, or impact data to score.
-- Explain the score in score_rationale; do not score a recording merely because it
-  uploaded successfully.
+- Follow scoring_eligibility exactly. If eligible is true, overall_score MUST be a
+  whole number from 0 to 100; never return null merely because some measurements
+  are missing or zero. Use only the listed body-movement measurements to score.
+  If eligible is false, overall_score must be null.
+- Explain the score in score_rationale and name any limitations in data_gaps.
+  Never use unavailable speed, ball, or impact data to score.
 - Each drill must be safe, simple, and usable on a practice range.
 - Return only JSON that matches the requested schema.
 
