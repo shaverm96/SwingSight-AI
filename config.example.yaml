@@ -51,6 +51,8 @@ gemini:
   # Gemini 3 Flash currently uses a pinned preview identifier.
   model: gemini-3-flash-preview
   timeout_seconds: 35
+  # Includes room for Gemini 3 reasoning plus the full structured coaching result.
+  max_output_tokens: 4096
 
 preprocessing:
   adaptive_contrast: true
