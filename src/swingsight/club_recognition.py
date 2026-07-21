@@ -50,6 +50,13 @@ def recognize_club_from_frame(image_path: str, config: Dict) -> Dict:
 
     detection = detect_club_head(enhanced_image, config)
     crop = crop_region(enhanced_image, detection.bbox)
+
+    # The five-way checkpoint is the preferred live-capture model when configured.
+    # Keep the existing staged path available for installations that do not use it.
+    five_way = classify_five_way_club_type(crop, config)
+    if five_way.source != "not_configured":
+        return _five_way_recognition_result(detection, five_way, config)
+
     broad = classify_broad_category(crop, config)
 
     detail: ClubDetailResult
@@ -168,6 +175,84 @@ def crop_region(image: Image.Image, bbox: Optional[Tuple[int, int, int, int]]) -
     x2 = max(x1 + 1, min(x2, image.width))
     y2 = max(y1 + 1, min(y2, image.height))
     return image.crop((x1, y1, x2, y2))
+
+
+def classify_five_way_club_type(image: Image.Image, config: Dict) -> ClubDetailResult:
+    """Classify a club as Driver, Wood, Hybrid, Iron, or Wedge."""
+
+    settings = config.get("club_recognition", {})
+    checkpoint_path = settings.get("five_way_cnn_model_path")
+    if not checkpoint_path:
+        return ClubDetailResult(
+            club_type=None,
+            confidence=0.0,
+            probabilities={},
+            reasoning=None,
+            source="not_configured",
+        )
+
+    prediction = _run_stage_cnn(
+        image,
+        checkpoint_path=checkpoint_path,
+        task="club_type_5way",
+        minimum_confidence=float(settings.get("five_way_cnn_min_confidence", 0.0)),
+    )
+    club_type = normalize_five_way_club_type(prediction.label)
+    reasoning = prediction.reasoning
+    if prediction.label is not None and club_type is None:
+        reasoning = (
+            f"Five-way club CNN returned unsupported label {prediction.label!r}; "
+            "expected driver, wood, hybrid, iron, or wedge."
+        )
+
+    return ClubDetailResult(
+        club_type=club_type,
+        confidence=prediction.confidence,
+        probabilities=prediction.probabilities,
+        reasoning=reasoning,
+        source=prediction.source,
+    )
+
+
+def _five_way_recognition_result(
+    detection: ClubHeadDetection,
+    prediction: ClubDetailResult,
+    config: Dict,
+) -> Dict:
+    confirm_threshold = float(config.get("club_recognition", {}).get("confirm_threshold", 0.6))
+    unavailable_sources = {"cnn_missing", "cnn_unavailable", "cnn_invalid", "cnn_inference_error"}
+    if prediction.source in unavailable_sources:
+        status = "unavailable"
+    elif prediction.club_type and prediction.confidence >= confirm_threshold:
+        status = "confirmed"
+    else:
+        status = "uncertain"
+
+    predicted = prediction.club_type
+    detected_category = "Wood" if predicted in {"Driver", "Wood", "Hybrid"} else "Iron" if predicted else "Unknown"
+    return {
+        "status": status,
+        "detected_category": detected_category,
+        "predicted_club": predicted or "Unknown",
+        "confidence": round(float(prediction.confidence), 3),
+        "reasoning": join_reasoning([
+            "club-head detector unavailable; classified the submitted frame" if detection.source == "fallback_full_frame" else None,
+            prediction.reasoning,
+        ]),
+        "bbox": detection.bbox,
+        "ocr": None,
+        "sources": {
+            "detector": detection.source,
+            "club_type_5way_classifier": prediction.source,
+        },
+        "stage_confidences": {
+            "detector": round(float(detection.confidence), 3),
+            "club_type_5way": round(float(prediction.confidence), 3),
+        },
+        "probabilities": {
+            "club_type_5way": prediction.probabilities,
+        },
+    }
 
 
 def classify_broad_category(image: Image.Image, config: Dict) -> BroadCategoryResult:
@@ -303,6 +388,21 @@ def _normalize_broad_label(label: Optional[str]) -> Optional[str]:
     if normalized in {"wood", "woods", "wood_style", "woodstyle", "driver_wood", "driverwood"}:
         return "wood"
     return None
+
+
+def normalize_five_way_club_type(label: Optional[str]) -> Optional[str]:
+    if label is None:
+        return None
+    normalized = _normalize_label(label)
+    labels = {
+        "driver": "Driver",
+        "wood": "Wood",
+        "fairway_wood": "Wood",
+        "hybrid": "Hybrid",
+        "iron": "Iron",
+        "wedge": "Wedge",
+    }
+    return labels.get(normalized)
 
 
 def normalize_iron_number(label: Optional[str]) -> Optional[int]:
