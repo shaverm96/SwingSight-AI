@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f5f7f4" />
+    <title>Your Swing Review · SwingSight</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}?v=20260721-review" />
+  </head>
+  <body>
+    <div class="page-shell review-page" data-analysis-id="{{ analysis_id }}">
+      <header class="topbar review-topbar">
+        <a class="brand" href="/" aria-label="SwingSight home"><span class="brand-mark">S</span><span>SwingSight</span></a>
+        <div class="review-actions"><span class="topbar-status"><span class="status-dot"></span><span id="reviewStatus">Loading your review</span></span><a class="button primary new-swing-button" href="/?record=1">Record new swing <span>→</span></a></div>
+      </header>
+      <main>
+        <section class="review-hero">
+          <div>
+            <p class="eyebrow">Your swing review</p>
+            <h1>Here’s what to work on next.</h1>
+            <p id="coachSummary" class="lead">We’re loading your personalized motion review and practice plan.</p>
+            <div class="review-session-meta"><span>Club <strong id="reviewClub">--</strong></span><span>Session <strong id="reviewId">{{ analysis_id }}</strong></span></div>
+          </div>
+          <aside class="review-score-card">
+            <p class="eyebrow">Swing score</p>
+            <p class="review-score"><strong id="reviewScore">--</strong><span id="reviewGrade">Review ready</span></p>
+            <p id="scoreContext">A clear view of your motion, from setup through finish.</p>
+          </aside>
+        </section>
+
+        <section class="review-main-grid">
+          <article class="review-video-card">
+            <div class="card-heading"><div><p class="eyebrow">See the motion</p><h2>Your swing overlay</h2></div><button id="expandOverlayButton" class="text-button" type="button">Expand</button></div>
+            <div class="visualization-toolbar"><div class="toggle-group" role="group" aria-label="Video view toggle"><button id="originalViewButton" class="button toggle is-active" type="button">Original</button><button id="overlayViewButton" class="button toggle" type="button">Overlay</button></div><a id="downloadOverlayButton" class="text-button hidden" href="#" download>Download</a></div>
+            <p id="visualizationStatus" class="visualization-status">Loading video…</p>
+            <video id="analysisPreview" controls playsinline preload="auto"></video>
+          </article>
+          <article class="coach-card">
+            <p class="eyebrow">Coach’s priority</p>
+            <h2 id="focusTitle">Your next best move</h2>
+            <p id="focusText" class="coach-focus">Loading your next focus…</p>
+            <div class="coach-callout"><span>✦</span><p id="clubNote">Your detailed coach notes will appear here after analysis.</p></div>
+          </article>
+        </section>
+
+        <section class="insight-section">
+          <div class="section-heading"><div><p class="eyebrow">Detailed review</p><h2>Know what to keep. Know what to change.</h2></div><p>Built for a simple practice session, with room for your detailed Gemini coaching.</p></div>
+          <div class="insight-grid">
+            <article class="insight-card insight-card--positive"><p class="eyebrow">Keep doing</p><h3>What’s working</h3><ul id="strengthList" class="feedback-list"></ul></article>
+            <article class="insight-card"><p class="eyebrow">Work on this</p><h3>Key adjustments</h3><ul id="improvementList" class="feedback-list"></ul></article>
+            <article class="insight-card"><p class="eyebrow">On the range</p><h3>Practice cues</h3><ul id="tipList" class="feedback-list"></ul></article>
+          </div>
+        </section>
+
+        <section class="drill-section">
+          <div class="section-heading"><div><p class="eyebrow">Practice plan</p><h2>Turn feedback into your next bucket.</h2></div></div>
+          <div id="drillList" class="drill-grid"></div>
+        </section>
+
+        <section class="report-section">
+          <div><p class="eyebrow">Take it with you</p><h2>Save this review for your next session.</h2><p>Download a clean coach-style summary of this swing.</p></div>
+          <div class="results-actions"><button id="downloadPdfButton" class="button ghost">Download PDF</button><button id="downloadDocxButton" class="button ghost">Download Word</button></div>
+        </section>
+
+        <details class="advanced-details"><summary>Advanced details</summary><div class="advanced-grid"><article><h3>Metrics</h3><pre id="advancedMetrics" class="output-box"></pre></article><article><h3>Tracking</h3><pre id="advancedTracking" class="output-box"></pre></article><article><h3>Model outputs</h3><pre id="advancedModels" class="output-box"></pre></article></div></details>
+      </main>
+    </div>
+    <div id="overlayModal" class="overlay-modal hidden" aria-hidden="true"><div class="overlay-modal__backdrop"></div><section class="overlay-modal__panel" role="dialog" aria-modal="true" aria-label="Expanded overlay viewer"><div class="overlay-modal__head"><div><p class="eyebrow">Expanded view</p><h2>Overlay viewer</h2></div><button id="closeOverlayModalButton" class="button ghost" type="button">Close</button></div><div class="overlay-modal__toolbar"><div class="toggle-group" role="group" aria-label="Expanded video view toggle"><button id="modalOriginalButton" class="button toggle is-active" type="button">Original</button><button id="modalOverlayButton" class="button toggle" type="button">Overlay</button></div></div><video id="overlayModalPreview" class="overlay-modal__video" controls playsinline preload="auto"></video></section></div>
+    <script src="{{ url_for('static', filename='js/analysis.js') }}?v=20260721-review"></script>
+  </body>
+</html>
