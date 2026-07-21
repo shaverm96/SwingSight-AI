@@ -90,3 +90,37 @@ def test_label_normalization_accepts_checkpoint_label_variants():
 
 def test_five_way_club_type_checkpoint_task_is_supported():
     assert "club_type_5way" in SUPPORTED_TASKS
+
+
+def test_five_way_model_is_preferred_when_configured(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        club_recognition,
+        "detect_club_head",
+        lambda image, config: club_recognition.ClubHeadDetection((0, 0, image.width, image.height), 0.8, "yolov8"),
+    )
+    monkeypatch.setattr(
+        club_recognition,
+        "classify_five_way_club_type",
+        lambda image, config: club_recognition.ClubDetailResult(
+            "Driver", 0.91, {"driver": 0.91, "wood": 0.03}, "five-way CNN selected driver", "cnn"
+        ),
+    )
+
+    result = club_recognition.recognize_club_from_frame(
+        str(_image_path(tmp_path)),
+        {"club_recognition": {"five_way_cnn_model_path": "models/trained/club_type_5way.pt", "confirm_threshold": 0.6}},
+    )
+
+    assert result["status"] == "confirmed"
+    assert result["detected_category"] == "Wood"
+    assert result["predicted_club"] == "Driver"
+    assert result["sources"]["club_type_5way_classifier"] == "cnn"
+    assert "broad_classifier" not in result["sources"]
+
+
+def test_five_way_label_normalization_uses_ui_labels():
+    assert club_recognition.normalize_five_way_club_type("driver") == "Driver"
+    assert club_recognition.normalize_five_way_club_type("fairway_wood") == "Wood"
+    assert club_recognition.normalize_five_way_club_type("hybrid") == "Hybrid"
+    assert club_recognition.normalize_five_way_club_type("iron") == "Iron"
+    assert club_recognition.normalize_five_way_club_type("wedge") == "Wedge"
