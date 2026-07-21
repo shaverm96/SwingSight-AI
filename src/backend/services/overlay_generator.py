@@ -46,6 +46,7 @@ LANDMARK_INDEX_MAPPING = {
 
 LOWER_BODY_LANDMARK_NAMES = ("left_hip", "right_hip", "left_knee", "right_knee", "left_ankle", "right_ankle")
 HAND_LANDMARK_NAMES = ("left_wrist", "right_wrist")
+ARM_LANDMARK_NAMES = ("left_elbow", "right_elbow", "left_wrist", "right_wrist")
 
 SIMPLE_POINTS = {"head", "neck", "left_shoulder", "right_shoulder", "left_elbow", "right_elbow", "left_wrist", "right_wrist", "left_hip", "right_hip", "left_knee", "right_knee", "left_ankle", "right_ankle"}
 FULL_POINTS = set(BODY_POINTS.values()) | {"neck", "mid_hip"}
@@ -566,7 +567,7 @@ def _distance_score(point_a: tuple[int, int, float] | None, point_b: tuple[int, 
     return float(np.hypot(point_a[0] - point_b[0], point_a[1] - point_b[1]))
 
 
-def _hand_smoothing_alpha(
+def _arm_smoothing_alpha(
     name: str,
     current: tuple[int, int, float] | None,
     previous: tuple[int, int, float] | None,
@@ -575,17 +576,20 @@ def _hand_smoothing_alpha(
     height: int,
     style: str,
 ) -> float:
-    if name not in HAND_LANDMARK_NAMES or current is None or previous is None:
+    """Smooth arms without introducing the lag that makes a golf swing look stiff."""
+    if name not in ARM_LANDMARK_NAMES or current is None or previous is None:
         return 0.85 if style == "simple" else 0.92
 
     movement = _point_distance(previous, current)
     slow_threshold = max(8.0, float(min(width, height)) * 0.018)
     fast_threshold = max(20.0, float(min(width, height)) * 0.04)
 
+    # A low alpha makes a fast-moving joint follow the current pose estimate,
+    # while still damping frame-to-frame detector jitter.
     if movement >= fast_threshold:
-        return 0.22
+        return 0.22 if name in HAND_LANDMARK_NAMES else 0.30
     if movement >= slow_threshold:
-        return 0.42
+        return 0.42 if name in HAND_LANDMARK_NAMES else 0.50
     return 0.68 if style == "simple" else 0.74
 
 
@@ -1566,7 +1570,13 @@ def validate_landmark(
         return False, "out_of_frame"
     if confidence < confidence_threshold:
         return False, "low_confidence"
-    if detect_unrealistic_jump(previous_point, point, threshold_px=jump_threshold_px):
+    # Arms traverse a much larger distance per frame during a swing than the
+    # lower body. Use an arm-specific limit so genuine elbow/wrist motion is
+    # not mistaken for a bad pose and frozen in place.
+    motion_limit = jump_threshold_px
+    if name in ARM_LANDMARK_NAMES:
+        motion_limit = max(jump_threshold_px * 1.75, float(min(width, height)) * 0.22)
+    if detect_unrealistic_jump(previous_point, point, threshold_px=motion_limit):
         return False, "jump"
     if name in {"left_ankle", "right_ankle", "left_knee", "right_knee", "left_hip", "right_hip"} and confidence < max(confidence_threshold, 0.35):
         return False, "lower_body_low_confidence"
@@ -1666,6 +1676,46 @@ def correct_ankle_tracking(
     return corrected, ankle_corrections, swap_corrections
 
 
+def _recover_missing_arm_joints(
+    current_points: Dict[str, tuple[int, int, float]],
+    previous_points: Dict[str, tuple[int, int, float]],
+    *,
+    width: int,
+    height: int,
+) -> tuple[Dict[str, tuple[int, int, float]], int]:
+    """Carry an occluded elbow with shoulder motion for a short, natural bridge."""
+    if not previous_points:
+        return dict(current_points), 0
+
+    recovered = dict(current_points)
+    recoveries = 0
+    for side in ("left", "right"):
+        elbow_name = f"{side}_elbow"
+        if recovered.get(elbow_name) is not None:
+            continue
+
+        previous_elbow = previous_points.get(elbow_name)
+        previous_shoulder = previous_points.get(f"{side}_shoulder")
+        current_shoulder = recovered.get(f"{side}_shoulder") or previous_shoulder
+        if previous_elbow is None or current_shoulder is None:
+            continue
+
+        if previous_shoulder is None:
+            estimate_x, estimate_y = previous_elbow[:2]
+        else:
+            # Preserve the elbow's offset from the shoulder rather than simply
+            # holding its old screen position while the torso rotates.
+            estimate_x = previous_elbow[0] + (current_shoulder[0] - previous_shoulder[0])
+            estimate_y = previous_elbow[1] + (current_shoulder[1] - previous_shoulder[1])
+
+        estimate_x = int(max(0, min(width - 1, round(estimate_x))))
+        estimate_y = int(max(0, min(height - 1, round(estimate_y))))
+        recovered[elbow_name] = (estimate_x, estimate_y, float(max(0.25, previous_elbow[2] * 0.78)))
+        recoveries += 1
+
+    return recovered, recoveries
+
+
 def _stabilize_key_landmarks(
     current_points: Dict[str, tuple[int, int, float]],
     previous_points: Dict[str, tuple[int, int, float]],
@@ -1719,7 +1769,7 @@ def _build_dense_pose_series(
 
     dense_series: Dict[int, Dict[str, tuple[int, int, float]]] = {}
     metrics = {"frames_interpolated": 0, "frames_rejected": 0, "frames_missing": 0}
-    corrections = {"ankle_corrections": 0, "swap_corrections": 0, "knee_swap_corrections": 0, "foot_swap_corrections": 0, "lower_body_rejections": 0, "lower_body_interpolations": 0, "hand_swap_corrections": 0, "hand_rejections": 0, "hand_interpolations": 0, "hand_recoveries": 0, "stale_hand_corrections": 0, "frames_with_missing_wrist_detection": 0}
+    corrections = {"ankle_corrections": 0, "swap_corrections": 0, "knee_swap_corrections": 0, "foot_swap_corrections": 0, "lower_body_rejections": 0, "lower_body_interpolations": 0, "arm_recoveries": 0, "hand_swap_corrections": 0, "hand_rejections": 0, "hand_interpolations": 0, "hand_recoveries": 0, "stale_hand_corrections": 0, "frames_with_missing_wrist_detection": 0}
     debug_rows: list[Dict[str, Any]] = []
     hand_debug_rows: list[Dict[str, Any]] = []
     previous_valid: Dict[str, tuple[int, int, float]] = {}
@@ -1807,8 +1857,16 @@ def _build_dense_pose_series(
             )
         )
 
-        hand_resolved, hand_summary = _resolve_hand_assignment(
+        arm_resolved, arm_recoveries = _recover_missing_arm_joints(
             lower_body_resolved,
+            previous_valid,
+            width=width,
+            height=height,
+        )
+        corrections["arm_recoveries"] += arm_recoveries
+
+        hand_resolved, hand_summary = _resolve_hand_assignment(
+            arm_resolved,
             previous_valid,
             width=width,
             height=height,
@@ -1858,8 +1916,8 @@ def _build_dense_pose_series(
         corrections["swap_corrections"] += swap_corrections
 
         alpha_map = {
-            name: _hand_smoothing_alpha(name, corrected_points.get(name), previous_valid.get(name), width=width, height=height, style=style)
-            for name in HAND_LANDMARK_NAMES
+            name: _arm_smoothing_alpha(name, corrected_points.get(name), previous_valid.get(name), width=width, height=height, style=style)
+            for name in ARM_LANDMARK_NAMES
             if corrected_points.get(name) is not None
         }
 
@@ -2444,6 +2502,7 @@ def generate_pose_overlay(
         "foot_swap_corrections": correction_metrics.get("foot_swap_corrections", 0),
         "lower_body_rejections": correction_metrics.get("lower_body_rejections", 0),
         "lower_body_interpolations": correction_metrics.get("lower_body_interpolations", 0),
+        "arm_recoveries": correction_metrics.get("arm_recoveries", 0),
         "hand_swap_corrections": correction_metrics.get("hand_swap_corrections", 0),
         "hand_rejections": correction_metrics.get("hand_rejections", 0),
         "hand_interpolations": correction_metrics.get("hand_interpolations", 0),
