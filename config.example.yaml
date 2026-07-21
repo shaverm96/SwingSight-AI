@@ -43,6 +43,15 @@ metrics:
   smoothing_window: 5
   normalize_by: torso
 
+# Gemini receives only local CV measurements by default—not the video, frames,
+# file paths, or debug artifacts. Export GEMINI_API_KEY in the runtime environment.
+gemini:
+  enabled: true
+  api_key_env: GEMINI_API_KEY
+  # Gemini 3 Flash currently uses a pinned preview identifier.
+  model: gemini-3-flash-preview
+  timeout_seconds: 35
+
 preprocessing:
   adaptive_contrast: true
   adaptive_contrast_clip_limit: 2.0
