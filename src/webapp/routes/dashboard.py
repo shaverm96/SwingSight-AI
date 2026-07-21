@@ -109,6 +109,7 @@ def record_swing() -> Response:
 
     service = _service()
     file_id, file_path = save_filestorage(file_obj, service.uploads_dir, "recorded")
+    uploaded_files[file_id] = file_path
     return jsonify({"upload_id": file_id, "file_name": Path(file_path).name, "preview_url": f"/uploads/{Path(file_path).name}"})
 
 
