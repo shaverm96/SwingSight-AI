@@ -9,6 +9,7 @@ from uuid import uuid4
 
 from flask import current_app
 
+from webapp.services.gemini_coaching_service import GeminiCoachingService
 from webapp.services.report_service import generate_pdf_report, generate_word_report
 from webapp.utils.storage import ensure_dir
 
@@ -34,6 +35,7 @@ class AnalysisService:
         self.uploads_dir = ensure_dir(paths.get("uploads_dir", "uploads"))
         self.outputs_dir = ensure_dir(paths.get("outputs_dir", "outputs"))
         self.reports_dir = ensure_dir(paths.get("reports_dir", "reports"))
+        self.gemini_coaching = GeminiCoachingService(self.config.get("gemini", {}))
 
     def run_analysis(self, context: AnalysisContext) -> Dict:
         analysis_id = uuid4().hex
@@ -101,6 +103,11 @@ class AnalysisService:
             club_note=analysis.get("club_note"),
         )
 
+        gemini_result = self.gemini_coaching.coach(analysis, coaching)
+        gemini_coaching = gemini_result.get("coaching") or {}
+        if gemini_coaching.get("next_focus"):
+            coaching["next_focus"] = gemini_coaching["next_focus"]
+
         swing_score = coaching.get("swing_score")
         score_label = self._score_label(swing_score, analysis.get("video_processed", False), analysis.get("tracking", {}))
         club_name = analysis.get("club", "Not detected") or "Not detected"
@@ -131,6 +138,8 @@ class AnalysisService:
             "advanced_metrics": technical_metrics,
             "tracking": analysis.get("tracking", {}),
             "model_outputs": analysis.get("model_outputs", {}),
+            "gemini_analysis": gemini_coaching or None,
+            "gemini": {key: value for key, value in gemini_result.items() if key != "coaching"},
             "overlay_files": analysis.get("overlay_files", []),
             "overlay_validation": overlay_validation,
             "overlay_variants": overlay_variants,
