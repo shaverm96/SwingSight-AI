@@ -86,9 +86,12 @@ function renderReview(result) {
   const overlay = result.visualization?.smoothed_overlay_video_url || result.visualization?.overlay_video_url || result.overlay_variants?.smoothed?.overlay_video_url || result.overlay_variants?.simple?.overlay_video_url || firstVideo(result.overlay_files);
 
   const geminiStatus = result.gemini?.status;
+  const geminiIssue = geminiStatus === "invalid_response" || geminiStatus === "unavailable";
   reviewStatus.textContent = geminiStatus === "success"
     ? "Gemini coaching included"
-    : result.status === "success" ? "Vision review ready" : "Review needs attention";
+    : geminiIssue
+      ? "Gemini coaching needs a retry"
+      : result.status === "success" ? "Vision review ready" : "Review needs attention";
   reviewClub.textContent = result.club || result.detected_club || "Not detected";
   reviewId.textContent = result.analysis_id || analysisId;
   reviewScore.textContent = Number.isFinite(score) ? Math.round(score) : "--";
@@ -98,12 +101,16 @@ function renderReview(result) {
     ? "Gemini score · measured pose evidence"
     : geminiStatus === "not_configured"
       ? "Local CV score · Gemini key is not configured"
-      : "Local CV score";
+      : geminiIssue
+        ? "Local CV score · Gemini response needs retry"
+        : "Local CV score";
   scoreContext.textContent = result.score_source === "gemini"
     ? detailed.score_rationale || result.score_rationale || "Gemini scored the observed body-movement evidence."
-    : result.video_processed
-      ? "Motion tracking and coaching are ready to review."
-      : "Use the notes below to capture a clearer next swing.";
+    : geminiIssue
+      ? "Your swing was tracked, but Gemini’s response could not be read. Select Record new swing to retry."
+      : result.video_processed
+        ? "Motion tracking and coaching are ready to review."
+        : "Use the notes below to capture a clearer next swing.";
   if (geminiScore === null || geminiScore === undefined) {
     scoreSource.textContent = geminiStatus === "success"
       ? "Gemini did not score this swing · not enough pose evidence"
@@ -111,7 +118,11 @@ function renderReview(result) {
   }
   coachSummary.textContent = summary || "Your personalized swing feedback is ready.";
   focusText.textContent = result.next_focus || firstText(detailed.next_focus, detailed.priority) || "Use the feedback below to guide your next practice swing.";
-  clubNote.textContent = result.club_note || firstText(detailed.coach_note, detailed.context) || "Detailed Gemini coaching, tips, and range cues will appear here as they are added.";
+  clubNote.textContent = result.club_note || firstText(detailed.coach_note, detailed.context) || (geminiIssue
+    ? "The swing analysis is saved, but Gemini’s response was not usable. A new recording will retry coaching automatically."
+    : geminiStatus === "not_configured"
+      ? "Add the Gemini key to enable detailed coaching for your next swing."
+      : "Detailed coaching will appear here after analysis.");
   renderList(strengthList, strengths, "Your review will highlight the best parts of this swing.");
   renderList(improvementList, improvements, "Your review will identify the highest-value change to make next.");
   renderList(tipList, tips, "Use this space for Gemini practice cues and simple on-course reminders.");
