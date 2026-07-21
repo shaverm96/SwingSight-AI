@@ -271,6 +271,9 @@ class GeminiCoachingService:
         self.enabled = bool(settings.get("enabled", True))
         self.model = str(settings.get("model") or DEFAULT_MODEL)
         self.timeout_seconds = max(3, int(settings.get("timeout_seconds", 35)))
+        # Gemini 3 may use part of the output budget for reasoning before returning
+        # its structured answer. Leave enough room for the complete JSON object.
+        self.max_output_tokens = max(1024, int(settings.get("max_output_tokens", 4096)))
         self.api_key_env = str(settings.get("api_key_env") or "GEMINI_API_KEY")
         self.api_key = os.getenv(self.api_key_env, "").strip()
 
@@ -297,7 +300,7 @@ class GeminiCoachingService:
             "generationConfig": {
                 "responseMimeType": "application/json",
                 "responseJsonSchema": COACHING_SCHEMA,
-                "maxOutputTokens": 1200,
+                "maxOutputTokens": self.max_output_tokens,
             },
         }
         try:
