@@ -50,6 +50,11 @@ const overlayModalPreview = document.getElementById("overlayModalPreview");
 const modalOriginalButton = document.getElementById("modalOriginalButton");
 const modalOverlayButton = document.getElementById("modalOverlayButton");
 const closeOverlayModalButton = document.getElementById("closeOverlayModalButton");
+const analysisProgress = document.getElementById("analysisProgress");
+const analysisProgressTitle = document.getElementById("analysisProgressTitle");
+const analysisProgressCopy = document.getElementById("analysisProgressCopy");
+const analysisProgressBar = document.getElementById("analysisProgressBar");
+const analysisProgressElapsed = document.getElementById("analysisProgressElapsed");
 
 state.visualizationMode = "original";
 state.originalVideoUrl = null;
@@ -134,6 +139,10 @@ startGuideButton.addEventListener("click", async () => {
   try {
     state.recording = true;
     await runGuidedCapture();
+  } catch (error) {
+    console.error(error);
+    hideAnalysisProgress();
+    updateStatus(error.message || "We could not finish that swing review. Please try again.");
   } finally {
     state.recording = false;
   }
@@ -151,17 +160,20 @@ downloadDocxButton.addEventListener("click", () => requestReport("docx"));
 
 async function handleUploadFlow(file, club) {
   try {
+    showAnalysisProgress("upload");
     updateStatus(`Uploading your ${club} swing...`);
     state.overlayStyle = "smoothed";
     state.overlayVariants = {};
     state.overlayValidation = null;
     state.videoUploadId = await uploadFile("/api/upload-video", "video", file);
+    setAnalysisProgressStage("analysis");
     await runAnalysis("/api/analyze", {
       video_upload_id: state.videoUploadId,
       club_category: club,
     });
   } catch (error) {
     console.error(error);
+    hideAnalysisProgress();
     updateStatus(error.message || "Upload failed. Please try again.");
     resultsPanel.classList.remove("hidden");
     setVisualizationMode("original");
@@ -443,7 +455,9 @@ async function runGuidedCapture() {
 
   updateStep("Uploading");
   updateStatus("Uploading your swing...");
+  showAnalysisProgress("upload");
   const uploadPayload = await uploadRecordedSwing(videoBlob);
+  setAnalysisProgressStage("analysis");
   state.overlayStyle = "smoothed";
   state.overlayVariants = {};
   state.overlayValidation = null;
@@ -542,23 +556,31 @@ async function uploadRecordedSwing(blob) {
 }
 
 async function runAnalysis(endpoint, payload) {
+  showAnalysisProgress("analysis");
   updateStatus("Analyzing your swing...");
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  if (!response.ok) {
-    const errorPayload = await response.json().catch(() => ({}));
-    throw new Error(errorPayload.message || errorPayload.error || "Analysis request failed");
+  try {
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!response.ok) {
+      const errorPayload = await response.json().catch(() => ({}));
+      throw new Error(errorPayload.message || errorPayload.error || "Analysis request failed");
+    }
+    const result = await response.json();
+    state.analysisId = result.analysis_id;
+    renderResults(result);
+    setAnalysisProgressStage("complete");
+    updateStatus("Analysis complete.");
+    resultsPanel.classList.remove("hidden");
+    downloadPdfButton.disabled = false;
+    downloadDocxButton.disabled = false;
+    window.setTimeout(hideAnalysisProgress, 520);
+  } catch (error) {
+    hideAnalysisProgress();
+    throw error;
   }
-  const result = await response.json();
-  state.analysisId = result.analysis_id;
-  renderResults(result);
-  updateStatus("Analysis complete.");
-  resultsPanel.classList.remove("hidden");
-  downloadPdfButton.disabled = false;
-  downloadDocxButton.disabled = false;
 }
 
 async function uploadFile(endpoint, fieldName, file) {
@@ -817,6 +839,90 @@ function renderFeedbackSection(listEl, items) {
     li.textContent = item;
     listEl.appendChild(li);
   }
+}
+
+const ANALYSIS_PROGRESS_STAGES = {
+  upload: {
+    title: "Getting your swing ready",
+    copy: "Securely preparing your video for review.",
+    progress: 26,
+  },
+  analysis: {
+    title: "Reading your swing",
+    copy: "Finding the movements that matter most.",
+    progress: 62,
+  },
+  overlay: {
+    title: "Building your review",
+    copy: "Adding the motion overlay and coach-style feedback.",
+    progress: 86,
+  },
+  complete: {
+    title: "Your swing review is ready",
+    copy: "Opening your feedback now.",
+    progress: 100,
+  },
+};
+
+function showAnalysisProgress(stage = "upload") {
+  if (!analysisProgress) {
+    return;
+  }
+  if (!state.analysisProgressStartedAt) {
+    state.analysisProgressStartedAt = Date.now();
+  }
+  analysisProgress.classList.remove("hidden");
+  analysisProgress.setAttribute("aria-hidden", "false");
+  document.body.setAttribute("aria-busy", "true");
+  setAnalysisProgressStage(stage);
+  if (!state.analysisProgressInterval) {
+    state.analysisProgressInterval = window.setInterval(updateAnalysisProgressElapsed, 1000);
+  }
+}
+
+function setAnalysisProgressStage(stage) {
+  if (!analysisProgress) {
+    return;
+  }
+  const details = ANALYSIS_PROGRESS_STAGES[stage] || ANALYSIS_PROGRESS_STAGES.analysis;
+  const stageOrder = { upload: 1, analysis: 2, overlay: 3, complete: 4 };
+  const currentOrder = stageOrder[stage] || 2;
+  analysisProgressTitle.textContent = details.title;
+  analysisProgressCopy.textContent = details.copy;
+  analysisProgressBar.style.width = `${details.progress}%`;
+  analysisProgress.querySelectorAll("[data-progress-step]").forEach((item) => {
+    const itemOrder = stageOrder[item.dataset.progressStep] || 0;
+    item.classList.toggle("is-complete", currentOrder > itemOrder);
+    item.classList.toggle("is-active", currentOrder === itemOrder || (stage === "complete" && itemOrder === 3));
+  });
+  window.clearTimeout(state.analysisProgressAdvanceTimer);
+  if (stage === "analysis") {
+    state.analysisProgressAdvanceTimer = window.setTimeout(() => setAnalysisProgressStage("overlay"), 4200);
+  }
+}
+
+function updateAnalysisProgressElapsed() {
+  if (!state.analysisProgressStartedAt || !analysisProgressElapsed) {
+    return;
+  }
+  const seconds = Math.max(1, Math.floor((Date.now() - state.analysisProgressStartedAt) / 1000));
+  analysisProgressElapsed.textContent = seconds < 10
+    ? "This usually takes less than a minute"
+    : `Still working — ${seconds}s elapsed`;
+}
+
+function hideAnalysisProgress() {
+  if (!analysisProgress) {
+    return;
+  }
+  window.clearTimeout(state.analysisProgressAdvanceTimer);
+  window.clearInterval(state.analysisProgressInterval);
+  state.analysisProgressAdvanceTimer = null;
+  state.analysisProgressInterval = null;
+  state.analysisProgressStartedAt = null;
+  analysisProgress.classList.add("hidden");
+  analysisProgress.setAttribute("aria-hidden", "true");
+  document.body.removeAttribute("aria-busy");
 }
 
 function updateStatus(message) {
