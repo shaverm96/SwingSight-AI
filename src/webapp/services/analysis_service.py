@@ -107,6 +107,12 @@ class AnalysisService:
         gemini_coaching = gemini_result.get("coaching") or {}
         if gemini_coaching.get("next_focus"):
             coaching["next_focus"] = gemini_coaching["next_focus"]
+        if gemini_coaching.get("overall_score") is not None:
+            coaching["swing_score"] = gemini_coaching["overall_score"]
+            coaching["score_source"] = "gemini"
+            coaching["score_rationale"] = gemini_coaching.get("score_rationale")
+        else:
+            coaching["score_source"] = "local_cv"
 
         swing_score = coaching.get("swing_score")
         score_label = self._score_label(swing_score, analysis.get("video_processed", False), analysis.get("tracking", {}))
@@ -132,6 +138,8 @@ class AnalysisService:
             "club_note": club_note,
             "swing_score": swing_score,
             "score_label": score_label,
+            "score_source": coaching.get("score_source", "local_cv"),
+            "score_rationale": coaching.get("score_rationale"),
             "strengths": coaching.get("strengths", []) or ["Your swing was uploaded successfully."],
             "improvements": coaching.get("improvements", []) or ["Record with your full body visible from setup through finish."],
             "next_focus": coaching.get("next_focus", "Record from a clear side angle with your full body in frame."),
