@@ -235,6 +235,7 @@ button:focus-visible, select:focus-visible, a:focus-visible {
 .review-score { display: flex; align-items: baseline; gap: 14px; margin: auto 0 14px; }
 .review-score strong { font-size: clamp(4.5rem, 7vw, 7rem); line-height: .78; letter-spacing: -.1em; }
 .review-score span { color: #c4dec5; font-size: .95rem; font-weight: 750; }
+.score-source { display: inline-flex; align-self: flex-start; margin: 0 0 12px; padding: 6px 9px; color: #d0ebd1; font-size: .7rem; font-weight: 750; letter-spacing: .04em; background: rgba(225,255,225,.1); border: 1px solid rgba(225,255,225,.14); border-radius: 999px; }
 .review-score-card > p:last-child { margin: 0; padding-top: 15px; color: #bbd6bd; font-size: .84rem; line-height: 1.45; border-top: 1px solid rgba(224,255,224,.16); }
 
 .review-main-grid { display: grid; grid-template-columns: minmax(0, 1.42fr) minmax(320px, .58fr); gap: 20px; margin-top: 24px; }
