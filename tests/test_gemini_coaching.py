@@ -82,3 +82,9 @@ def test_gemini_fenced_json_response_is_accepted():
 
     assert parsed is not None
     assert validate_coaching(parsed)["overall_score"] == 76
+
+
+def test_gemini_output_budget_reserves_room_for_complete_coaching():
+    service = GeminiCoachingService({"max_output_tokens": 4096})
+
+    assert service.max_output_tokens == 4096
