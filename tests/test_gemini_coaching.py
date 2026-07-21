@@ -25,6 +25,7 @@ def test_gemini_evidence_uses_only_computed_measurements():
     assert evidence["body_movement"]["hip_rotation"] == 78.0
     assert evidence["speed"]["club_speed_mph"] == 102.0
     assert evidence["impact_and_ball"]["ball_speed_mph"] == 149.0
+    assert evidence["tracking_quality"]["frames_with_pose"] == 120
     assert "/private/swing.mov" not in str(evidence)
 
 
