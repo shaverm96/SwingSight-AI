@@ -10,7 +10,7 @@
       href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}?v=20260603" />
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}?v=20260721" />
   </head>
   <body>
     <div class="page-shell">
@@ -46,10 +46,19 @@
       <section class="option-grid">
         <article class="option-card">
           <h2>Upload a Swing Video</h2>
-          <p>Choose a swing video from your computer. We will analyze it and give you coaching tips.</p>
+          <p>Choose a swing video, then tell us which club you used for club-aware feedback.</p>
+          <label class="club-select-label" for="uploadClubSelect">Club used</label>
+          <select id="uploadClubSelect" class="club-select">
+            <option value="">Select your club</option>
+            <option value="Driver">Driver</option>
+            <option value="Wood">Fairway Wood</option>
+            <option value="Hybrid">Hybrid</option>
+            <option value="Iron">Iron</option>
+            <option value="Wedge">Wedge</option>
+          </select>
           <div class="option-actions">
             <input id="uploadInput" class="hidden-input" type="file" accept="video/*" />
-            <button id="uploadTrigger" class="button primary">Upload Video</button>
+            <button id="uploadTrigger" class="button primary" disabled>Choose Video</button>
           </div>
         </article>
 
@@ -70,9 +79,10 @@
           </div>
           <div id="recordStep" class="step-pill">Step: Ready</div>
         </div>
+        <p id="recordClubStatus" class="record-club-status">Show the club head to the camera, then start your guided capture.</p>
         <video id="livePreview" muted playsinline></video>
         <div class="record-actions">
-          <button id="startGuideButton" class="button primary">Start</button>
+          <button id="startGuideButton" class="button primary">Scan Club &amp; Start</button>
           <button id="cancelRecordButton" class="button ghost">Cancel</button>
         </div>
       </section>
@@ -176,6 +186,6 @@
       </div>
     </div>
 
-    <script src="{{ url_for('static', filename='js/dashboard.js') }}?v=20260603"></script>
+    <script src="{{ url_for('static', filename='js/dashboard.js') }}?v=20260721"></script>
   </body>
 </html>
