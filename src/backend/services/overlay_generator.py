@@ -2001,27 +2001,35 @@ def _build_dense_pose_series(
     return dense_series, metrics, corrections, debug_rows, hand_debug_rows, frame_reasons
 
 
-def save_overlay_video(frames: Iterable[np.ndarray], output_path: str | Path, fps: float, frame_size: tuple[int, int]) -> str:
+def _open_overlay_writer(output_path: str | Path, fps: float, frame_size: tuple[int, int]) -> cv2.VideoWriter:
     output_file = Path(output_path)
     ensure_dir(output_file.parent)
-    codec_candidates = ["avc1", "H264", "mp4v"]
-    writer = None
-    for codec in codec_candidates:
-        fourcc = cv2.VideoWriter_fourcc(*codec)
-        candidate = cv2.VideoWriter(str(output_file), fourcc, float(fps or 30.0), frame_size)
+    for codec in ("avc1", "H264", "mp4v"):
+        candidate = cv2.VideoWriter(
+            str(output_file),
+            cv2.VideoWriter_fourcc(*codec),
+            float(fps or 30.0),
+            frame_size,
+        )
         if candidate.isOpened():
-            writer = candidate
-            break
+            return candidate
         candidate.release()
+    return cv2.VideoWriter(
+        str(output_file),
+        cv2.VideoWriter_fourcc(*"mp4v"),
+        float(fps or 30.0),
+        frame_size,
+    )
 
-    if writer is None:
-        writer = cv2.VideoWriter(str(output_file), cv2.VideoWriter_fourcc(*"mp4v"), float(fps or 30.0), frame_size)
+
+def save_overlay_video(frames: Iterable[np.ndarray], output_path: str | Path, fps: float, frame_size: tuple[int, int]) -> str:
+    writer = _open_overlay_writer(output_path, fps, frame_size)
     try:
         for frame in frames:
             writer.write(frame)
     finally:
         writer.release()
-    return str(output_file)
+    return str(output_path)
 
 
 def validate_overlay_video(overlay_path: str | Path, source_video_path: str | Path | None = None) -> Dict[str, Any]:
@@ -2187,7 +2195,10 @@ def generate_pose_overlay(
         }
 
     video_frame_count = int(capture.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
-    rendered_frames: list[np.ndarray] = []
+    # Stream the normal overlay directly to disk. Holding every decoded frame
+    # until the final encode adds substantial memory pressure and a second pass.
+    debug_enabled = overlay_style != "simple"
+    rendered_writer = _open_overlay_writer(overlay_path, fps, frame_size)
     frames_processed = 0
     frames_with_pose = 0
     confidence_values: list[float] = []
@@ -2213,7 +2224,8 @@ def generate_pose_overlay(
     )
     key_frames = _approximate_key_frames(video_frame_count or len(dense_series) or len(pose_frames))
     debug_frames_dir = overlay_root / "debug_frames" / video_file.stem / overlay_style
-    debug_frames_dir.mkdir(parents=True, exist_ok=True)
+    if debug_enabled:
+        debug_frames_dir.mkdir(parents=True, exist_ok=True)
     debug_frame_paths: list[str] = []
 
     while True:
@@ -2251,7 +2263,7 @@ def generate_pose_overlay(
                         confidence_values.append(float(point[2]))
             interpolated_landmarks = max(0, len(frame_points) - raw_landmark_count) if frame_index not in raw_frame_indices and frame_points else 0
             estimated_landmarks = max(0, len(points) - raw_landmark_count) if tracking_mode != "raw" else 0
-            LOGGER.info(
+            LOGGER.debug(
                 "POSE TRACKING frame=%s tracking_mode=%s raw_landmarks=%s rendered_landmarks=%s interpolated_landmarks=%s estimated_landmarks=%s avg_confidence=%.3f pose_quality=%.2f",
                 frame_index,
                 tracking_mode,
@@ -2309,22 +2321,23 @@ def generate_pose_overlay(
                     )
                 tracking_debug_frames.append(tracking_debug_frame)
 
-            lower_body_debug_frame = _draw_lower_body_debug_overlay(
-                frame,
-                frame_points,
-                lower_body_debug_rows[frame_index] if frame_index < len(lower_body_debug_rows) else {},
-            )
-            lower_body_debug_frames.append(lower_body_debug_frame)
+            if debug_enabled:
+                lower_body_debug_frame = _draw_lower_body_debug_overlay(
+                    frame,
+                    frame_points,
+                    lower_body_debug_rows[frame_index] if frame_index < len(lower_body_debug_rows) else {},
+                )
+                lower_body_debug_frames.append(lower_body_debug_frame)
 
-            hand_debug_row = hand_debug_rows[frame_index] if frame_index < len(hand_debug_rows) else {}
-            hand_debug_frame = _draw_hand_debug_overlay(
-                frame,
-                _debug_row_to_points(hand_debug_row, "raw"),
-                _debug_row_to_points(hand_debug_row, "smoothed"),
-                _debug_row_to_points(hand_debug_row, "final"),
-                hand_debug_row,
-            )
-            hand_debug_frames.append(hand_debug_frame)
+                hand_debug_row = hand_debug_rows[frame_index] if frame_index < len(hand_debug_rows) else {}
+                hand_debug_frame = _draw_hand_debug_overlay(
+                    frame,
+                    _debug_row_to_points(hand_debug_row, "raw"),
+                    _debug_row_to_points(hand_debug_row, "smoothed"),
+                    _debug_row_to_points(hand_debug_row, "final"),
+                    hand_debug_row,
+                )
+                hand_debug_frames.append(hand_debug_frame)
 
         if frames_processed == 1:
             cv2.putText(
@@ -2338,7 +2351,7 @@ def generate_pose_overlay(
                 cv2.LINE_AA,
             )
 
-        if frame_index in dense_series and (frame_index % 24 == 0 or frame_index in {0, key_frames["A"], key_frames["T"], key_frames["I"], key_frames["F"]}):
+        if debug_enabled and frame_index in dense_series and (frame_index % 24 == 0 or frame_index in {0, key_frames["A"], key_frames["T"], key_frames["I"], key_frames["F"]}):
             debug_frame = frame.copy()
             cv2.putText(
                 debug_frame,
@@ -2354,9 +2367,10 @@ def generate_pose_overlay(
             cv2.imwrite(str(debug_path), debug_frame)
             debug_frame_paths.append(str(debug_path))
 
-        rendered_frames.append(frame)
+        rendered_writer.write(frame)
 
     capture.release()
+    rendered_writer.release()
 
     raw_pose_csv_path = overlay_root / f"{video_file.stem}_raw_pose_landmarks.csv"
     corrected_pose_csv_path = overlay_root / f"{video_file.stem}_corrected_pose_landmarks.csv"
@@ -2436,7 +2450,7 @@ def generate_pose_overlay(
     body_metric_frames = _build_coordinate_metric_frames(dense_series, fps=fps)
     body_movement_metrics = compute_coordinate_movement_metrics(body_metric_frames)
 
-    saved_path = save_overlay_video(rendered_frames, overlay_path, fps, frame_size)
+    saved_path = str(overlay_path)
     overlay_validation = validate_overlay_video(saved_path, video_file)
     body_coordinate_csv_url = f"/outputs/experiments/{body_coordinate_csv_path.name}" if body_coordinate_csv_path.exists() else None
     body_coordinate_wide_csv_url = f"/outputs/experiments/{body_coordinate_wide_csv_path.name}" if body_coordinate_wide_csv_path.exists() else None
