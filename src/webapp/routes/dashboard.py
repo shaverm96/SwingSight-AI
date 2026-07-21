@@ -27,6 +27,11 @@ def home() -> str:
     return render_template("dashboard.html")
 
 
+@dashboard_bp.get("/analysis/<analysis_id>")
+def analysis_review(analysis_id: str) -> str:
+    return render_template("analysis.html", analysis_id=analysis_id)
+
+
 @dashboard_bp.post("/api/upload-video")
 def upload_video() -> Response:
     file_obj = request.files.get("video")
