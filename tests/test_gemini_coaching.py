@@ -32,6 +32,8 @@ def test_gemini_response_validation_limits_coaching_lists():
     coaching = validate_coaching(
         {
             "summary": "A measured summary.",
+            "overall_score": 82.7,
+            "score_rationale": "Measured body motion was consistent.",
             "next_focus": "Finish balanced.",
             "strengths": ["One", "Two", "Three", "Four"],
             "improvements": ["One"],
@@ -43,6 +45,8 @@ def test_gemini_response_validation_limits_coaching_lists():
 
     assert coaching is not None
     assert coaching["strengths"] == ["One", "Two", "Three"]
+    assert coaching["overall_score"] == 83
+    assert coaching["score_rationale"] == "Measured body motion was consistent."
     assert coaching["drills"][0]["title"] == "Pause drill"
 
 
