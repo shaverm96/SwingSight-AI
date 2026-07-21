@@ -9,6 +9,8 @@ def test_gemini_evidence_uses_only_computed_measurements():
             "club": "Driver",
             "advanced_metrics": {
                 "hip_rotation": 78.0,
+                "shoulder_rotation": 65.0,
+                "spine_angle": 40.0,
                 "club_speed_mph": 102.0,
                 "impact_frame": 42,
                 "ball_speed_mph": 149.0,
