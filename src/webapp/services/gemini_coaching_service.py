@@ -222,7 +222,6 @@ class GeminiCoachingService:
             "generationConfig": {
                 "responseMimeType": "application/json",
                 "responseJsonSchema": COACHING_SCHEMA,
-                "temperature": 0.2,
                 "maxOutputTokens": 1200,
             },
         }
