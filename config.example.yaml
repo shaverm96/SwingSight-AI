@@ -24,6 +24,10 @@ club_recognition:
   yolo_class_name:
   detector_confidence_threshold: 0.4
   confirm_threshold: 0.6
+  # Preferred live-capture classifier. The checkpoint stores the five class
+  # labels: driver, wood, hybrid, iron, and wedge.
+  five_way_cnn_model_path: models/trained/club_type_5way.pt
+  five_way_cnn_min_confidence: 0.60
   # Stage 1: class_names must be iron and wood (or one of the documented aliases).
   broad_cnn_model_path: models/trained/club_broad_cnn.pt
   broad_cnn_min_confidence: 0.55
