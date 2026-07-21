@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+from bisect import bisect_left
 from collections import defaultdict, deque
 from dataclasses import dataclass
 from pathlib import Path
@@ -1795,13 +1796,17 @@ def _build_dense_pose_series(
         source_points = frame_points.get(current_index)
         if source_points is None:
             metrics["frames_missing"] += 1
-            prev_candidates = [idx for idx in ordered_indices if idx < current_index]
-            next_candidates = [idx for idx in ordered_indices if idx > current_index]
-            prev_points = frame_points.get(prev_candidates[-1], {}) if prev_candidates else {}
-            next_points = frame_points.get(next_candidates[0], {}) if next_candidates else {}
-            gap = (next_candidates[0] - prev_candidates[-1]) if prev_candidates and next_candidates else None
+            insertion_index = bisect_left(ordered_indices, current_index)
+            previous_index = ordered_indices[insertion_index - 1] if insertion_index else None
+            next_index = ordered_indices[insertion_index] if insertion_index < len(ordered_indices) else None
+            prev_points = frame_points.get(previous_index, {}) if previous_index is not None else {}
+            next_points = frame_points.get(next_index, {}) if next_index is not None else {}
+            gap = (next_index - previous_index) if previous_index is not None and next_index is not None else None
             if prev_points and next_points and gap is not None and gap <= 2:
-                source_points = interpolate_missing_landmarks(prev_points, next_points, ratio=0.5)
+                # Use the frame's actual place in the gap; a fixed midpoint
+                # visibly jerks elbows when more than one sampled frame is absent.
+                interpolation_ratio = (current_index - previous_index) / float(gap)
+                source_points = interpolate_missing_landmarks(prev_points, next_points, ratio=interpolation_ratio)
                 metrics["frames_interpolated"] += 1
                 frame_reasons[current_index] = DEBUG_FRAME_REASONS["interpolated"]
             else:
