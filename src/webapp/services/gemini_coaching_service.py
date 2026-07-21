@@ -99,6 +99,18 @@ def build_gemini_evidence(analysis: Dict[str, Any], conventional_coaching: Dict[
         if isinstance(group, dict):
             target.update(_compact_mapping(group, group.keys()))
 
+    tracking_quality = _compact_mapping(
+        quality,
+        (
+            "total_frames_processed", "frames_with_pose", "detection_rate",
+            "average_pose_quality_score", "head_tracked_rate", "hands_tracked_rate",
+            "feet_tracked_rate", "frames_interpolated", "frames_rejected",
+        ),
+    )
+    pose_frames = tracking.get("pose_frames_detected") or tracking.get("frames_with_pose")
+    if tracking_quality.get("frames_with_pose") is None and pose_frames is not None:
+        tracking_quality["frames_with_pose"] = pose_frames
+
     unavailable: list[str] = []
     if not speed:
         unavailable.append("No measured club or hand speed was provided by the vision pipeline.")
@@ -117,14 +129,7 @@ def build_gemini_evidence(analysis: Dict[str, Any], conventional_coaching: Dict[
         "body_movement": body_movement,
         "speed": speed,
         "impact_and_ball": impact,
-        "tracking_quality": _compact_mapping(
-            quality,
-            (
-                "total_frames_processed", "frames_with_pose", "detection_rate",
-                "average_pose_quality_score", "head_tracked_rate", "hands_tracked_rate",
-                "feet_tracked_rate", "frames_interpolated", "frames_rejected",
-            ),
-        ),
+        "tracking_quality": tracking_quality,
         "existing_local_coaching": {
             "strengths": conventional_coaching.get("strengths", []),
             "improvements": conventional_coaching.get("improvements", []),
