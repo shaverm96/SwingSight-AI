@@ -9,7 +9,7 @@ import requests
 
 
 LOGGER = logging.getLogger(__name__)
-DEFAULT_MODEL = "gemini-2.5-pro"
+DEFAULT_MODEL = "gemini-3-flash-preview"
 GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 
 COACHING_SCHEMA: Dict[str, Any] = {
