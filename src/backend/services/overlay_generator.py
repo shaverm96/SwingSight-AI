@@ -585,13 +585,14 @@ def _arm_smoothing_alpha(
     slow_threshold = max(8.0, float(min(width, height)) * 0.018)
     fast_threshold = max(20.0, float(min(width, height)) * 0.04)
 
-    # A low alpha makes a fast-moving joint follow the current pose estimate,
-    # while still damping frame-to-frame detector jitter.
+    # Keep enough of the previous point to suppress one-frame detector spikes.
+    # This still lets a genuine fast swing move every frame, without a visible
+    # wrist or elbow teleport when the pose model briefly locks on incorrectly.
     if movement >= fast_threshold:
-        return 0.22 if name in HAND_LANDMARK_NAMES else 0.30
+        return 0.46 if name in HAND_LANDMARK_NAMES else 0.52
     if movement >= slow_threshold:
-        return 0.42 if name in HAND_LANDMARK_NAMES else 0.50
-    return 0.68 if style == "simple" else 0.74
+        return 0.58 if name in HAND_LANDMARK_NAMES else 0.64
+    return 0.72 if style == "simple" else 0.78
 
 
 def _log_point_triplet(prefix: str, point: tuple[int, int, float] | None) -> dict[str, float | int | None]:
@@ -1576,7 +1577,9 @@ def validate_landmark(
     # not mistaken for a bad pose and frozen in place.
     motion_limit = jump_threshold_px
     if name in ARM_LANDMARK_NAMES:
-        motion_limit = max(jump_threshold_px * 1.75, float(min(width, height)) * 0.22)
+        # Permit a real golf swing while rejecting the large landmark teleports
+        # that are most noticeable around the wrists and elbows.
+        motion_limit = max(jump_threshold_px * 1.35, float(min(width, height)) * 0.18)
     if detect_unrealistic_jump(previous_point, point, threshold_px=motion_limit):
         return False, "jump"
     if name in {"left_ankle", "right_ankle", "left_knee", "right_knee", "left_hip", "right_hip"} and confidence < max(confidence_threshold, 0.35):
