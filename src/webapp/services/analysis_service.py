@@ -167,7 +167,12 @@ class AnalysisService:
         return result
 
     def _score_label(self, swing_score: Optional[int], video_processed: bool, tracking: Dict) -> str:
-        pose_detected = int(tracking.get("pose_frames_detected", 0) or 0)
+        pose_detected = int(
+            tracking.get("pose_frames_detected", 0)
+            or tracking.get("frames_with_pose", 0)
+            or (tracking.get("quality_metrics", {}) or {}).get("frames_with_pose", 0)
+            or 0
+        )
 
         if swing_score is None:
             if not video_processed:
