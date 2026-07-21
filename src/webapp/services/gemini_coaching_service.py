@@ -16,6 +16,8 @@ COACHING_SCHEMA: Dict[str, Any] = {
     "type": "object",
     "properties": {
         "summary": {"type": "string", "description": "A concise, encouraging summary grounded only in the provided evidence."},
+        "overall_score": {"type": ["integer", "null"], "description": "A 0-100 score only when enough measured pose evidence exists; otherwise null."},
+        "score_rationale": {"type": "string", "description": "A short explanation of the score using only provided measurements, or why no score was produced."},
         "next_focus": {"type": "string", "description": "The single highest-value practice focus."},
         "strengths": {"type": "array", "items": {"type": "string"}, "description": "Up to three evidence-based strengths."},
         "improvements": {"type": "array", "items": {"type": "string"}, "description": "Up to three evidence-based adjustments."},
@@ -34,7 +36,7 @@ COACHING_SCHEMA: Dict[str, Any] = {
         },
         "data_gaps": {"type": "array", "items": {"type": "string"}, "description": "Measurements that were not available and therefore were not assessed."},
     },
-    "required": ["summary", "next_focus", "strengths", "improvements", "tips", "drills", "data_gaps"],
+    "required": ["summary", "overall_score", "score_rationale", "next_focus", "strengths", "improvements", "tips", "drills", "data_gaps"],
 }
 
 
@@ -145,6 +147,11 @@ Rules:
   encouraging.
 - Do not provide medical, injury, or equipment-fit advice.
 - Give a maximum of three strengths, three improvements, three tips, and three drills.
+- Score only observed body-movement evidence on a 0-100 scale. Set overall_score
+  to null when there are fewer than three body-movement measurements or no pose
+  frames were tracked. Never use unavailable speed, ball, or impact data to score.
+- Explain the score in score_rationale; do not score a recording merely because it
+  uploaded successfully.
 - Each drill must be safe, simple, and usable on a practice range.
 - Return only JSON that matches the requested schema.
 
@@ -166,6 +173,17 @@ def validate_coaching(payload: Any) -> Dict[str, Any] | None:
     if not isinstance(summary, str) or not summary.strip() or not isinstance(next_focus, str) or not next_focus.strip():
         return None
 
+    score_value = payload.get("overall_score")
+    if isinstance(score_value, bool):
+        score_value = None
+    elif isinstance(score_value, (int, float)):
+        score_value = int(round(max(0, min(100, score_value))))
+    else:
+        score_value = None
+    score_rationale = payload.get("score_rationale")
+    if not isinstance(score_rationale, str) or not score_rationale.strip():
+        score_rationale = "No Gemini score rationale was returned."
+
     drills: list[Dict[str, str]] = []
     for drill in payload.get("drills", []) if isinstance(payload.get("drills"), list) else []:
         if not isinstance(drill, dict):
@@ -179,6 +197,8 @@ def validate_coaching(payload: Any) -> Dict[str, Any] | None:
 
     return {
         "summary": summary.strip(),
+        "overall_score": score_value,
+        "score_rationale": score_rationale.strip(),
         "next_focus": next_focus.strip(),
         "strengths": _as_string_list(payload.get("strengths")),
         "improvements": _as_string_list(payload.get("improvements")),
