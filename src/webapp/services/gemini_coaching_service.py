@@ -170,6 +170,56 @@ def _as_string_list(value: Any, limit: int = 3) -> list[str]:
     return [str(item).strip() for item in value if isinstance(item, str) and item.strip()][:limit]
 
 
+def _response_text(payload: Any) -> str:
+    """Collect text from Gemini candidates without exposing the raw response."""
+    if not isinstance(payload, dict):
+        return ""
+
+    text_parts: list[str] = []
+    candidates = payload.get("candidates")
+    if not isinstance(candidates, list):
+        return ""
+
+    for candidate in candidates:
+        if not isinstance(candidate, dict):
+            continue
+        content = candidate.get("content")
+        parts = content.get("parts") if isinstance(content, dict) else None
+        if not isinstance(parts, list):
+            continue
+        for part in parts:
+            if isinstance(part, dict) and isinstance(part.get("text"), str):
+                text_parts.append(part["text"])
+    return "\n".join(text_parts).strip()
+
+
+def _json_object_from_text(text: Any) -> Dict[str, Any] | None:
+    """Parse a JSON object from a JSON response that may be fenced by the model."""
+    if not isinstance(text, str) or not text.strip():
+        return None
+
+    candidate = text.strip()
+    if candidate.startswith("```"):
+        lines = candidate.splitlines()
+        if lines and lines[0].lstrip().startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].strip().startswith("```"):
+            lines = lines[:-1]
+        candidate = "\n".join(lines).strip()
+
+    decoder = json.JSONDecoder()
+    for value in (candidate, candidate[candidate.find("{"):] if "{" in candidate else ""):
+        if not value:
+            continue
+        try:
+            parsed, _ = decoder.raw_decode(value)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(parsed, dict):
+            return parsed
+    return None
+
+
 def validate_coaching(payload: Any) -> Dict[str, Any] | None:
     if not isinstance(payload, dict):
         return None
@@ -261,12 +311,16 @@ class GeminiCoachingService:
                 LOGGER.warning("Gemini coaching request failed with HTTP %s", response.status_code)
                 return {**base, "status": "unavailable", "coaching": None}
             payload = response.json()
-            text = payload.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
-            coaching = validate_coaching(json.loads(text))
+            response_data = _json_object_from_text(_response_text(payload))
+            if response_data is None:
+                LOGGER.warning("Gemini coaching returned non-JSON text")
+                return {**base, "status": "invalid_response", "reason": "response_not_json", "coaching": None}
+
+            coaching = validate_coaching(response_data)
             if coaching is None:
                 LOGGER.warning("Gemini coaching response did not pass validation")
-                return {**base, "status": "invalid_response", "coaching": None}
+                return {**base, "status": "invalid_response", "reason": "response_schema_invalid", "coaching": None}
             return {**base, "status": "success", "coaching": coaching}
         except (requests.RequestException, ValueError, TypeError, KeyError, IndexError) as exc:
             LOGGER.warning("Gemini coaching unavailable: %s", type(exc).__name__)
-            return {**base, "status": "unavailable", "coaching": None}
+            return {**base, "status": "unavailable", "reason": "request_failed", "coaching": None}
