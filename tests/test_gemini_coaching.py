@@ -26,6 +26,7 @@ def test_gemini_evidence_uses_only_computed_measurements():
     assert evidence["speed"]["club_speed_mph"] == 102.0
     assert evidence["impact_and_ball"]["ball_speed_mph"] == 149.0
     assert evidence["tracking_quality"]["frames_with_pose"] == 120
+    assert evidence["scoring_eligibility"]["eligible"] is True
     assert "/private/swing.mov" not in str(evidence)
 
 
@@ -88,3 +89,15 @@ def test_gemini_output_budget_reserves_room_for_complete_coaching():
     service = GeminiCoachingService({"max_output_tokens": 4096})
 
     assert service.max_output_tokens == 4096
+
+
+def test_gemini_score_gate_requires_pose_and_three_numeric_measurements():
+    evidence = build_gemini_evidence(
+        {
+            "advanced_metrics": {"hip_rotation": 78.0, "shoulder_rotation": 60.0},
+            "tracking": {"pose_frames_detected": 120},
+        },
+        {},
+    )
+
+    assert evidence["scoring_eligibility"]["eligible"] is False
