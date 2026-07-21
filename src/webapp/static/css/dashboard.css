@@ -188,6 +188,34 @@ body {
   pointer-events: none;
 }
 
+.club-select-label {
+  color: var(--muted);
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+
+.club-select {
+  width: 100%;
+  min-height: 46px;
+  padding: 0.7rem 0.85rem;
+  color: var(--ink);
+  font: inherit;
+  background: rgba(7, 16, 31, 0.88);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.club-select:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.record-club-status {
+  margin: 0 0 1rem;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
 .record-panel,
 .results-panel {
   background: var(--panel-strong);
