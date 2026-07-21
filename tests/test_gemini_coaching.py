@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from webapp.services.gemini_coaching_service import GeminiCoachingService, build_gemini_evidence, validate_coaching
+from webapp.services.gemini_coaching_service import GeminiCoachingService, _json_object_from_text, _response_text, build_gemini_evidence, validate_coaching
 
 
 def test_gemini_evidence_uses_only_computed_measurements():
@@ -59,3 +59,26 @@ def test_gemini_skips_network_without_a_runtime_key(monkeypatch):
 
     assert result["status"] == "not_configured"
     assert result["coaching"] is None
+
+
+def test_gemini_fenced_json_response_is_accepted():
+    payload = {
+        "candidates": [
+            {
+                "content": {
+                    "parts": [
+                        {
+                            "text": """```json
+{"summary":"Measured feedback.","overall_score":76,"score_rationale":"Measured body movement was steady.","next_focus":"Keep your finish.","strengths":["Balanced finish"],"improvements":["Keep posture"],"tips":["Finish tall"],"drills":[],"data_gaps":["Impact was not measured."]}
+```"""
+                        }
+                    ]
+                }
+            }
+        ]
+    }
+
+    parsed = _json_object_from_text(_response_text(payload))
+
+    assert parsed is not None
+    assert validate_coaching(parsed)["overall_score"] == 76
