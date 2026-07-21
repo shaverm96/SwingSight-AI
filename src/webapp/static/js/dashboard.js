@@ -5,10 +5,13 @@ const state = {
   selectedCameraId: null,
   availableCameras: [],
   recording: false,
+  uploadClub: null,
+  recordedClub: null,
 };
 
 const uploadInput = document.getElementById("uploadInput");
 const uploadTrigger = document.getElementById("uploadTrigger");
+const uploadClubSelect = document.getElementById("uploadClubSelect");
 const recordTrigger = document.getElementById("recordTrigger");
 const startGuideButton = document.getElementById("startGuideButton");
 const cancelRecordButton = document.getElementById("cancelRecordButton");
@@ -17,6 +20,7 @@ const resultsPanel = document.getElementById("resultsPanel");
 const livePreview = document.getElementById("livePreview");
 const analysisPreview = document.getElementById("analysisPreview");
 const recordStep = document.getElementById("recordStep");
+const recordClubStatus = document.getElementById("recordClubStatus");
 const statusText = document.getElementById("statusText");
 const analysisIdValue = document.getElementById("analysisIdValue");
 const detectedClubValue = document.getElementById("detectedClubValue");
@@ -62,11 +66,17 @@ state.overlayVideoInfo = null;
 wireVideoDebug(analysisPreview, "analysisPreview");
 wireVideoDebug(overlayModalPreview, "overlayModalPreview");
 
+uploadClubSelect.addEventListener("change", () => {
+  state.uploadClub = uploadClubSelect.value || null;
+  uploadTrigger.disabled = !state.uploadClub;
+});
+
 uploadTrigger.addEventListener("click", () => uploadInput.click());
 
 uploadInput.addEventListener("change", async () => {
   const file = uploadInput.files[0];
-  if (!file) {
+  const club = state.uploadClub;
+  if (!file || !club) {
     return;
   }
   state.overlayStyle = "smoothed";
@@ -79,8 +89,8 @@ uploadInput.addEventListener("change", async () => {
   downloadPdfButton.disabled = true;
   downloadDocxButton.disabled = true;
   analysisIdValue.textContent = "Uploading...";
-  detectedClubValue.textContent = "--";
-  detectedClubDetail.textContent = "--";
+  detectedClubValue.textContent = club;
+  detectedClubDetail.textContent = club;
   swingScoreValue.textContent = "--";
   swingScoreDetail.textContent = "--";
   swingGradeValue.textContent = "Waiting for analysis";
@@ -88,7 +98,7 @@ uploadInput.addEventListener("change", async () => {
   renderFeedbackSection(takeawayList, ["Uploading the video preview so you can confirm the file is visible."]);
   visualizationStatus.textContent = "Original video preview";
   resultsPanel.scrollIntoView({ behavior: "smooth", block: "start" });
-  await handleUploadFlow(file);
+  await handleUploadFlow(file, club);
 });
 
 originalViewButton.addEventListener("click", () => setVisualizationMode("original"));
@@ -109,6 +119,10 @@ modalOriginalButton.addEventListener("click", () => setModalVideoMode("original"
 modalOverlayButton.addEventListener("click", () => setModalVideoMode("overlay"));
 
 recordTrigger.addEventListener("click", async () => {
+  state.recordedClub = null;
+  recordStep.textContent = "Step: Scan club";
+  recordClubStatus.textContent = "Show the club head to the camera, then select Scan Club & Start.";
+  startGuideButton.textContent = "Scan Club & Start";
   recordPanel.classList.remove("hidden");
   await initCamera();
 });
@@ -135,14 +149,17 @@ cancelRecordButton.addEventListener("click", () => {
 downloadPdfButton.addEventListener("click", () => requestReport("pdf"));
 downloadDocxButton.addEventListener("click", () => requestReport("docx"));
 
-async function handleUploadFlow(file) {
+async function handleUploadFlow(file, club) {
   try {
-    updateStatus("Uploading your swing...");
+    updateStatus(`Uploading your ${club} swing...`);
     state.overlayStyle = "smoothed";
     state.overlayVariants = {};
     state.overlayValidation = null;
     state.videoUploadId = await uploadFile("/api/upload-video", "video", file);
-    await runAnalysis("/api/analyze", { video_upload_id: state.videoUploadId });
+    await runAnalysis("/api/analyze", {
+      video_upload_id: state.videoUploadId,
+      club_category: club,
+    });
   } catch (error) {
     console.error(error);
     updateStatus(error.message || "Upload failed. Please try again.");
@@ -397,8 +414,21 @@ async function runGuidedCapture() {
     }
   }
 
+  updateStep("Scan club");
+  updateStatus("Show the club head to the camera. Scanning now...");
+  const club = await detectClubFromCamera();
+  if (!club) {
+    updateStep("Scan club");
+    return;
+  }
+
+  state.recordedClub = club;
+  detectedClubValue.textContent = club;
+  detectedClubDetail.textContent = club;
+  recordClubStatus.textContent = `Club confirmed: ${club}.`;
+  startGuideButton.textContent = "Club Confirmed";
   updateStep("Step back");
-  updateStatus("Step back so your full body is visible.");
+  updateStatus("Club confirmed. Step back so your full body is visible.");
   const bodyVisible = await attemptBodyCheck();
   if (!bodyVisible) {
     updateStatus("Step back so your full body is visible.");
@@ -422,7 +452,10 @@ async function runGuidedCapture() {
   analysisPreview.src = uploadPayload.preview_url || `/uploads/${uploadPayload.file_name}`;
 
   updateStep("Analyzing");
-  await runAnalysis("/api/analyze-swing", { video_upload_id: state.videoUploadId });
+  await runAnalysis("/api/analyze-swing", {
+    video_upload_id: state.videoUploadId,
+    club_category: state.recordedClub,
+  });
   updateStep("Done");
 }
 
@@ -438,12 +471,36 @@ async function attemptBodyCheck() {
   return false;
 }
 
+async function detectClubFromCamera() {
+  try {
+    const response = await postFrame("/api/club-detect");
+    const result = response?.result || {};
+    const club = result.club || result.detected_club;
+    if (result.status !== "confirmed" || !club || club === "Not detected") {
+      const reason = result.reasoning || "The club was not clear enough to confirm.";
+      recordClubStatus.textContent = `Could not confirm the club. ${reason} Try again with the club head centered in the frame.`;
+      updateStatus("Club scan needs a clearer view. Try again.");
+      return null;
+    }
+    return club;
+  } catch (error) {
+    console.error(error);
+    recordClubStatus.textContent = "Club scan is unavailable. Check that the five-way model is installed, then try again.";
+    updateStatus("Club scan is unavailable. Try again after the model is installed.");
+    return null;
+  }
+}
+
 async function postFrame(endpoint) {
   const blob = await captureFrameBlob();
   const fd = new FormData();
   fd.append("frame", blob, "frame.png");
   const resp = await fetch(endpoint, { method: "POST", body: fd });
-  return resp.json();
+  const payload = await resp.json().catch(() => ({}));
+  if (!resp.ok) {
+    throw new Error(payload.error || "Camera check failed.");
+  }
+  return payload;
 }
 
 async function captureFrameBlob() {
