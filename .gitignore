@@ -12,6 +12,10 @@ venv/
 .env
 .env.*
 
+# Runtime state
+swingsight.log
+*.pid
+
 # Jupyter
 .ipynb_checkpoints/
 
