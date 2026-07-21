@@ -8,189 +8,62 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}?v=20260721-apple" />
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}?v=20260721-review" />
   </head>
   <body>
-    <div class="page-shell">
+    <div class="page-shell start-page">
       <header class="topbar">
-        <a class="brand" href="/" aria-label="SwingSight home">
-          <span class="brand-mark">S</span>
-          <span>SwingSight</span>
-        </a>
-        <div class="topbar-status">
-          <span class="status-dot"></span>
-          <span id="statusText">Ready when you are</span>
-        </div>
+        <a class="brand" href="/" aria-label="SwingSight home"><span class="brand-mark">S</span><span>SwingSight</span></a>
+        <div class="topbar-status"><span class="status-dot"></span><span id="statusText">Ready when you are</span></div>
       </header>
-
       <main>
         <section class="welcome-card">
           <div class="welcome-copy">
             <p class="eyebrow">Your personal swing coach</p>
             <h1>A clearer swing,<br /><span>one shot at a time.</span></h1>
             <p class="lead">Record a swing on the range or bring in a video. We’ll turn it into simple, useful feedback.</p>
-            <div class="quick-steps" aria-label="How it works">
-              <span><b>1</b> Capture</span>
-              <span><b>2</b> Analyze</span>
-              <span><b>3</b> Improve</span>
-            </div>
+            <div class="quick-steps" aria-label="How it works"><span><b>1</b> Capture</span><span><b>2</b> Analyze</span><span><b>3</b> Improve</span></div>
           </div>
           <aside class="swing-today">
-            <p class="eyebrow">Today’s session</p>
-            <p class="today-score"><strong id="swingScoreValue">--</strong><span>score</span></p>
-            <div class="today-meta">
-              <span>Club <strong id="detectedClubValue">Not selected</strong></span>
-              <span>Session <strong id="analysisIdValue">New</strong></span>
-            </div>
+            <p class="eyebrow">Ready to review</p>
+            <p class="today-score"><strong>01</strong><span>swing at a time</span></p>
+            <div class="today-meta"><span>Time needed <strong>Less than 1 min</strong></span><span>Feedback <strong>Motion + coaching</strong></span></div>
           </aside>
         </section>
-
         <section class="action-section" aria-labelledby="actionHeading">
-          <div class="section-heading">
-            <div>
-              <p class="eyebrow">Start here</p>
-              <h2 id="actionHeading">How would you like to review your swing?</h2>
-            </div>
-            <p>Choose the option that fits your moment.</p>
-          </div>
-
+          <div class="section-heading"><div><p class="eyebrow">Start here</p><h2 id="actionHeading">How would you like to review your swing?</h2></div><p>Choose the option that fits your moment.</p></div>
           <div class="option-grid">
             <article class="option-card upload-card">
               <div class="option-icon" aria-hidden="true">↑</div>
-              <div>
-                <p class="card-kicker">From your camera roll</p>
-                <h3>Upload a swing</h3>
-                <p>Have a video already? Tell us your club and we’ll handle the rest.</p>
-              </div>
-              <div class="club-field">
-                <label for="uploadClubSelect">Club used</label>
-                <select id="uploadClubSelect" class="club-select">
-                  <option value="">Choose your club</option>
-                  <option value="Driver">Driver</option>
-                  <option value="Wood">Fairway Wood</option>
-                  <option value="Hybrid">Hybrid</option>
-                  <option value="Iron">Iron</option>
-                  <option value="Wedge">Wedge</option>
-                </select>
-              </div>
-              <div class="option-actions">
-                <input id="uploadInput" class="hidden-input" type="file" accept="video/*" />
-                <button id="uploadTrigger" class="button primary" disabled>Choose a video <span>→</span></button>
-              </div>
+              <div><p class="card-kicker">From your camera roll</p><h3>Upload a swing</h3><p>Have a video already? Tell us your club and we’ll handle the rest.</p></div>
+              <div class="club-field"><label for="uploadClubSelect">Club used</label><select id="uploadClubSelect" class="club-select"><option value="">Choose your club</option><option value="Driver">Driver</option><option value="Wood">Fairway Wood</option><option value="Hybrid">Hybrid</option><option value="Iron">Iron</option><option value="Wedge">Wedge</option></select></div>
+              <div class="option-actions"><input id="uploadInput" class="hidden-input" type="file" accept="video/*" /><button id="uploadTrigger" class="button primary" disabled>Choose a video <span>→</span></button></div>
             </article>
-
             <article class="option-card record-card">
               <div class="option-icon option-icon--dark" aria-hidden="true">◉</div>
-              <div>
-                <p class="card-kicker">On the range</p>
-                <h3>Record a swing</h3>
-                <p>Use your camera for an easy guided capture. We’ll check your club first.</p>
-              </div>
+              <div><p class="card-kicker">On the range</p><h3>Record a swing</h3><p>Use your camera for an easy guided capture. We’ll check your club first.</p></div>
               <div class="record-tip"><span>✦</span> Best results: set your phone at waist height, facing your side.</div>
-              <div class="option-actions">
-                <button id="recordTrigger" class="button button-dark">Open camera <span>→</span></button>
-              </div>
+              <div class="option-actions"><button id="recordTrigger" class="button button-dark">Open camera <span>→</span></button></div>
             </article>
           </div>
         </section>
-
         <section id="recordPanel" class="record-panel hidden">
-          <div class="panel-head">
-            <div>
-              <p class="eyebrow">Live capture</p>
-              <h2>Set up your swing</h2>
-            </div>
-            <div id="recordStep" class="step-pill">Step: Ready</div>
-          </div>
+          <div class="panel-head"><div><p class="eyebrow">Live capture</p><h2>Set up your swing</h2></div><div id="recordStep" class="step-pill">Step: Ready</div></div>
           <p id="recordClubStatus" class="record-club-status">Show the club head to the camera, then start your guided capture.</p>
           <video id="livePreview" muted playsinline></video>
-          <div class="record-actions">
-            <button id="startGuideButton" class="button primary">Scan club &amp; start</button>
-            <button id="cancelRecordButton" class="button ghost">Cancel</button>
-          </div>
-        </section>
-
-        <section id="resultsPanel" class="results-panel hidden">
-          <div class="results-head">
-            <div>
-              <p class="eyebrow">Your feedback</p>
-              <h2>Your swing summary</h2>
-            </div>
-            <div class="results-actions">
-              <button id="downloadPdfButton" class="button ghost" disabled>Download PDF</button>
-              <button id="downloadDocxButton" class="button ghost" disabled>Download Word</button>
-            </div>
-          </div>
-
-          <div class="results-grid">
-            <article class="results-card score-card">
-              <p class="card-kicker">Overall score</p>
-              <p class="score-line"><strong id="swingScoreDetail">--</strong><span id="swingGradeValue">Awaiting analysis</span></p>
-              <div class="club-confirmed"><span>Club</span><strong id="detectedClubDetail">--</strong></div>
-            </article>
-            <article class="results-card">
-              <h3>Biggest takeaways</h3>
-              <ul id="takeawayList" class="feedback-list"></ul>
-              <p class="card-kicker">Focus next</p>
-              <p id="focusText" class="focus-text">--</p>
-            </article>
-            <article class="results-card visualization-card">
-              <div class="visualization-heading">
-                <div><p class="card-kicker">See the motion</p><h3>Body movement</h3></div>
-                <button id="expandOverlayButton" class="text-button" type="button">Expand</button>
-              </div>
-              <div class="visualization-toolbar">
-                <div class="toggle-group" role="group" aria-label="Video view toggle">
-                  <button id="originalViewButton" class="button toggle is-active" type="button">Original</button>
-                  <button id="overlayViewButton" class="button toggle" type="button">Overlay</button>
-                </div>
-                <a id="downloadOverlayButton" class="text-button hidden" href="#" download>Download</a>
-              </div>
-              <p id="visualizationStatus" class="visualization-status">Original video ready.</p>
-              <div id="singleVideoView" class="video-stage"><video id="analysisPreview" controls playsinline preload="auto"></video></div>
-            </article>
-          </div>
-
-          <details id="advancedDetails" class="advanced-details">
-            <summary>Advanced details</summary>
-            <div class="advanced-grid">
-              <article><h3>Metrics</h3><pre id="advancedMetrics" class="output-box"></pre></article>
-              <article><h3>Tracking points</h3><pre id="advancedTracking" class="output-box"></pre></article>
-              <article><h3>Hand tracking</h3><pre id="advancedHands" class="output-box"></pre></article>
-              <article><h3>Model outputs</h3><pre id="advancedModels" class="output-box"></pre></article>
-              <article><h3>Overlay validation</h3><pre id="advancedOverlay" class="output-box"></pre></article>
-              <article><h3>Debug</h3><pre id="advancedDebug" class="output-box"></pre></article>
-            </div>
-          </details>
+          <div class="record-actions"><button id="startGuideButton" class="button primary">Scan club &amp; start</button><button id="cancelRecordButton" class="button ghost">Cancel</button></div>
         </section>
       </main>
     </div>
-
     <div id="analysisProgress" class="progress-sheet hidden" aria-hidden="true">
       <div class="progress-sheet__backdrop"></div>
       <section class="progress-sheet__panel" role="dialog" aria-modal="true" aria-labelledby="analysisProgressTitle">
-        <div class="progress-orbit"><span></span></div>
-        <p class="eyebrow">SwingSight is working</p>
-        <h2 id="analysisProgressTitle">Getting your swing ready</h2>
-        <p id="analysisProgressCopy">This usually takes less than a minute. Keep this page open while we work.</p>
+        <div class="progress-orbit"><span></span></div><p class="eyebrow">SwingSight is working</p><h2 id="analysisProgressTitle">Getting your swing ready</h2><p id="analysisProgressCopy">This usually takes less than a minute. Keep this page open while we work.</p>
         <div class="progress-track" aria-hidden="true"><span id="analysisProgressBar"></span></div>
-        <ol class="progress-steps">
-          <li data-progress-step="upload"><span>1</span> Preparing video</li>
-          <li data-progress-step="analysis"><span>2</span> Reading your swing</li>
-          <li data-progress-step="overlay"><span>3</span> Building your review</li>
-        </ol>
+        <ol class="progress-steps"><li data-progress-step="upload"><span>1</span> Preparing video</li><li data-progress-step="analysis"><span>2</span> Reading your swing</li><li data-progress-step="overlay"><span>3</span> Building your review</li></ol>
         <p id="analysisProgressElapsed" class="progress-elapsed">Just getting started</p>
       </section>
     </div>
-
-    <div id="overlayModal" class="overlay-modal hidden" aria-hidden="true">
-      <div class="overlay-modal__backdrop"></div>
-      <section class="overlay-modal__panel" role="dialog" aria-modal="true" aria-label="Expanded overlay viewer">
-        <div class="overlay-modal__head"><div><p class="eyebrow">Expanded view</p><h2>Overlay viewer</h2></div><button id="closeOverlayModalButton" class="button ghost" type="button">Close</button></div>
-        <div class="overlay-modal__toolbar"><div class="toggle-group" role="group" aria-label="Expanded video view toggle"><button id="modalOriginalButton" class="button toggle is-active" type="button">Original</button><button id="modalOverlayButton" class="button toggle" type="button">Overlay</button></div></div>
-        <video id="overlayModalPreview" class="overlay-modal__video" controls playsinline preload="auto"></video>
-      </section>
-    </div>
-    <script src="{{ url_for('static', filename='js/dashboard.js') }}?v=20260721-apple"></script>
+    <script src="{{ url_for('static', filename='js/dashboard.js') }}?v=20260721-review"></script>
   </body>
 </html>
