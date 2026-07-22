@@ -13,7 +13,12 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "uploads_dir": "uploads",
         "outputs_dir": "outputs",
         "reports_dir": "reports",
-    }
+    },
+    "club_recognition": {
+        "confirm_threshold": 0.6,
+        "five_way_cnn_model_path": "models/trained/club_type_5way.pt",
+        "five_way_cnn_min_confidence": 0.6,
+    },
 }
 
 
