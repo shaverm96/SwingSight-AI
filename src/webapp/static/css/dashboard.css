@@ -289,3 +289,21 @@ button:focus-visible, select:focus-visible, a:focus-visible {
   .drill-grid { grid-template-columns: 1fr; }
   .report-section { display: grid; padding: 23px; border-radius: 18px; }
 }
+
+/* Coaching beside the swing video */
+.review-main-grid { align-items: start; }
+.coach-card { display: grid; gap: 22px; align-content: start; justify-content: initial; }
+.coach-focus { margin-bottom: 0; }
+.coach-observations { padding-top: 20px; border-top: 1px solid rgba(20, 83, 38, .12); }
+.coach-observations .eyebrow { margin-bottom: 10px; }
+.feedback-list--compact { gap: 8px; }
+.feedback-list--compact li { padding: 10px 11px 10px 27px; font-size: .84rem; }
+.feedback-list--compact li::before { left: 12px; }
+
+@media (min-width: 861px) and (max-width: 1040px) {
+  .review-main-grid { grid-template-columns: minmax(0, 1.22fr) minmax(280px, .78fr); }
+}
+@media (max-width: 860px) {
+  .review-main-grid { grid-template-columns: 1fr; }
+  .coach-card { gap: 18px; }
+}
