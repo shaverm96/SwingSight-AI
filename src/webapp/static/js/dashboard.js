@@ -134,14 +134,15 @@ async function runGuidedCapture() {
     }
   }
   updateStep("Scan club");
-  updateStatus("Checking your club…");
-  const club = await detectClubFromCamera();
-  if (!club) {
+  updateStatus("Checking your club with the five-way club model…");
+  const clubResult = await detectClubFromCamera();
+  if (!clubResult) {
     return;
   }
 
-  state.recordedClub = club;
-  recordClubStatus.textContent = `Club confirmed: ${club}. Step back so your full body is visible.`;
+  state.recordedClub = clubResult.club;
+  const confidence = Number.isFinite(clubResult.confidence) ? ` (${Math.round(clubResult.confidence * 100)}% confidence)` : "";
+  recordClubStatus.textContent = `${clubResult.club} detected${confidence}. Step back so your full body is visible.`;
   updateStep("Check stance");
   const bodyVisible = await attemptBodyCheck();
   if (!bodyVisible) {
@@ -190,7 +191,10 @@ async function detectClubFromCamera() {
       updateStatus("Club scan needs a clearer view.");
       return null;
     }
-    return club;
+    return {
+      club,
+      confidence: Number(result.confidence),
+    };
   } catch (error) {
     console.error(error);
     recordClubStatus.textContent = "Club scan is unavailable. Check that the club model is installed, then try again.";
