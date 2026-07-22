@@ -15,13 +15,13 @@ GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model
 COACHING_SCHEMA: Dict[str, Any] = {
     "type": "object",
     "properties": {
-        "summary": {"type": "string", "description": "A concise, encouraging summary grounded only in the provided evidence."},
+        "summary": {"type": "string", "description": "Two or three concise, encouraging sentences in a natural on-range golf-coach voice. Address the player directly and use only provided evidence."},
         "overall_score": {"type": ["integer", "null"], "description": "A 0-100 score only when enough measured pose evidence exists; otherwise null."},
-        "score_rationale": {"type": "string", "description": "A short explanation of the score using only provided measurements, or why no score was produced."},
-        "next_focus": {"type": "string", "description": "The single highest-value practice focus."},
-        "strengths": {"type": "array", "items": {"type": "string"}, "description": "Up to three evidence-based strengths."},
-        "improvements": {"type": "array", "items": {"type": "string"}, "description": "Up to three evidence-based adjustments."},
-        "tips": {"type": "array", "items": {"type": "string"}, "description": "Short, actionable on-range cues."},
+        "score_rationale": {"type": "string", "description": "A short player-friendly explanation of the score using only provided measurements, or why no score was produced. Avoid computer-vision jargon."},
+        "next_focus": {"type": "string", "description": "The single highest-value player-facing practice focus, phrased as a simple move or feel."},
+        "strengths": {"type": "array", "items": {"type": "string"}, "description": "Up to three observed swing actions stated in natural golf-coach language. Never describe tracking quality or processing."},
+        "improvements": {"type": "array", "items": {"type": "string"}, "description": "Up to three specific player-facing adjustments with a clear movement or feel."},
+        "tips": {"type": "array", "items": {"type": "string"}, "description": "Short, natural on-range cues a golfer can use on the next ball."},
         "drills": {
             "type": "array",
             "items": {
@@ -145,11 +145,6 @@ def build_gemini_evidence(analysis: Dict[str, Any], conventional_coaching: Dict[
             "measured_body_metrics": sorted(measured_body_metrics.keys()),
             "rule": "Score when at least 24 pose frames and three numeric body-movement measurements are available.",
         },
-        "existing_local_coaching": {
-            "strengths": conventional_coaching.get("strengths", []),
-            "improvements": conventional_coaching.get("improvements", []),
-            "next_focus": conventional_coaching.get("next_focus"),
-        },
         "unavailable_measurements": unavailable,
     }
 
@@ -158,13 +153,29 @@ def _coach_prompt(evidence: Dict[str, Any]) -> str:
     return """You are SwingSight's golf coaching layer. Create useful, concise practice
 feedback from the JSON evidence below.
 
-Rules:
+Voice and coaching rules:
+- Speak like an experienced, encouraging golf coach standing beside one player on
+  the range. Use warm, direct language: "you", "feel", "setup", "turn", "finish",
+  and other normal golf terms when supported by the evidence.
+- Lead with what the player can do on the next swing. Every strength, adjustment,
+  tip, and drill must describe an observed swing action or a simple action to try.
+- Do not mention vision pipelines, pose tracking, processed frames, tracking
+  quality, measurement accuracy, reliability, or model outputs in player-facing
+  coaching. Do not praise the player merely because data was captured successfully.
+- Avoid robotic or clinical wording such as "generate measurable tempo",
+  "stabilize the head to allow tracking", or "consistent tracking reliability".
+  Say the golf move and the feel instead.
+- Use camera/framing guidance only in data_gaps when missing evidence genuinely
+  prevents a movement assessment; never make it the main coaching focus when
+  coachable body-movement evidence exists.
+- Keep each list item short, specific, and conversational. The next_focus should
+  read like one clear move or feel, not a category or report heading.
+
+Evidence and safety rules:
 - Treat only provided values as facts. Never estimate, fabricate, or convert an
   unavailable value into club speed, ball speed, impact, launch, or contact data.
 - If ball/impact/speed data is unavailable, say it was not measured rather than
   diagnosing impact quality.
-- Explain body-movement findings in golfer-friendly terms and keep the tone
-  encouraging.
 - Do not provide medical, injury, or equipment-fit advice.
 - Give a maximum of three strengths, three improvements, three tips, and three drills.
 - Follow scoring_eligibility exactly. If eligible is true, overall_score MUST be a
