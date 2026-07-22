@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+PROJECT_ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
+
+exec /usr/bin/osascript - "$PROJECT_ROOT" <<'APPLESCRIPT'
+on run argv
+    set projectRoot to item 1 of argv
+    tell application "Terminal"
+        activate
+        do script "cd " & quoted form of projectRoot & " && ./scripts/start-macos.sh"
+    end tell
+end run
+APPLESCRIPT

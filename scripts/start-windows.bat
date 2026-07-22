@@ -1,7 +1,7 @@
 @echo off
 setlocal EnableExtensions
 
-set "SCRIPT_DIR=%~dp0"
+set "SCRIPT_DIR=%~dp0..\"
 set "VENV_PYTHON=%SCRIPT_DIR%.venv\Scripts\python.exe"
 cd /d "%SCRIPT_DIR%"
 

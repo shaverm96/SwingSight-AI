@@ -2,25 +2,25 @@
 
 A local golf-swing coach that analyzes uploaded or recorded video, creates a motion overlay, identifies the club when available, and provides practice feedback.
 
-## Start here
+## Launch SwingSight
 
 | macOS | Windows |
 | --- | --- |
-| Double-click or run `start.sh` | Double-click `start.bat` |
+| Double-click **SwingSight.app** | Double-click **Launch SwingSight.bat** |
 
-Each launcher creates a local Python environment and installs the app the first time it runs. Then open <http://127.0.0.1:8000>.
+Both launchers open Terminal or Command Prompt, create a local Python environment on first use, install the app, and start the local dashboard at <http://127.0.0.1:8000>.
 
 For detailed Gemini feedback, add `GEMINI_API_KEY=...` to a local `.env` file. The key is never committed.
 
 ## Project map
 
-- `start.sh` / `start.bat` — the only supported launchers.
+- `SwingSight.app` / `Launch SwingSight.bat` — the only supported double-click launchers.
 - `src/` — application code: web UI, analysis, vision, scoring, and reports.
 - `data/` — local sample and working video data.
 - `models/` — local model checkpoints; keep trained files in `models/trained/`.
 - `outputs/`, `reports/`, `uploads/` — files created while the app runs.
 - `tests/` — automated checks.
-- `notebooks/`, `assets/`, and `scripts/` — optional model-training and research material.
+- `notebooks/`, `assets/`, and `scripts/` — optional model-training, research, and launcher support files.
 
 ## What the app does
 
