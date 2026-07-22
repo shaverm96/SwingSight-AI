@@ -55,7 +55,7 @@ def recognize_club_from_frame(image_path: str, config: Dict) -> Dict:
     # Keep the existing staged path available for installations that do not use it.
     five_way = classify_five_way_club_type(crop, config)
     if five_way.source != "not_configured":
-        return _five_way_recognition_result(detection, five_way, config)
+        return _five_way_recognition_result(detection, crop, five_way, config)
 
     broad = classify_broad_category(crop, config)
 
@@ -216,44 +216,75 @@ def classify_five_way_club_type(image: Image.Image, config: Dict) -> ClubDetailR
 
 def _five_way_recognition_result(
     detection: ClubHeadDetection,
+    crop: Image.Image,
     prediction: ClubDetailResult,
     config: Dict,
 ) -> Dict:
-    confirm_threshold = float(config.get("club_recognition", {}).get("confirm_threshold", 0.6))
+    """Finish the five-way decision and, for irons/wedges, read the club marking."""
+
+    settings = config.get("club_recognition", {})
+    confirm_threshold = float(settings.get("confirm_threshold", 0.6))
     unavailable_sources = {"cnn_missing", "cnn_unavailable", "cnn_invalid", "cnn_inference_error"}
+    family = prediction.club_type
+    marking: Optional[ClubDetailResult] = None
+    predicted = family
+    confidence = prediction.confidence
+    ocr_payload = None
+
+    if family in {"Iron", "Wedge"} and prediction.source not in unavailable_sources:
+        marking_crop = preprocess_marking_region(crop)
+        marking = classify_club_marking(marking_crop, family, config)
+        if marking.club_type:
+            predicted = marking.club_type
+            confidence = (0.55 * prediction.confidence) + (0.45 * marking.confidence)
+            ocr_payload = {
+                "text": _club_marking_text(marking.club_type),
+                "confidence": round(float(marking.confidence), 3),
+                "source": marking.source,
+            }
+
     if prediction.source in unavailable_sources:
         status = "unavailable"
-    elif prediction.club_type and prediction.confidence >= confirm_threshold:
+    elif family in {"Iron", "Wedge"} and (marking is None or not marking.club_type):
+        # Do not invent a number or loft. Let the UI ask for a tighter sole/face view.
+        status = "needs_marking"
+    elif predicted and confidence >= confirm_threshold:
         status = "confirmed"
     else:
         status = "uncertain"
 
-    predicted = prediction.club_type
-    detected_category = "Wood" if predicted in {"Driver", "Wood", "Hybrid"} else "Iron" if predicted else "Unknown"
+    detected_category = "Wood" if family in {"Driver", "Wood", "Hybrid"} else family or "Unknown"
+    sources = {
+        "detector": detection.source,
+        "club_type_5way_classifier": prediction.source,
+    }
+    stage_confidences = {
+        "detector": round(float(detection.confidence), 3),
+        "club_type_5way": round(float(prediction.confidence), 3),
+    }
+    probabilities = {"club_type_5way": prediction.probabilities}
+    reasoning = [
+        "club-head detector unavailable; classified the submitted frame" if detection.source == "fallback_full_frame" else None,
+        prediction.reasoning,
+    ]
+    if marking is not None:
+        sources["club_marking_classifier"] = marking.source
+        stage_confidences["club_marking"] = round(float(marking.confidence), 3)
+        probabilities["club_marking"] = marking.probabilities
+        reasoning.append(marking.reasoning)
+
     return {
         "status": status,
         "detected_category": detected_category,
         "predicted_club": predicted or "Unknown",
-        "confidence": round(float(prediction.confidence), 3),
-        "reasoning": join_reasoning([
-            "club-head detector unavailable; classified the submitted frame" if detection.source == "fallback_full_frame" else None,
-            prediction.reasoning,
-        ]),
+        "confidence": round(float(confidence), 3),
+        "reasoning": join_reasoning(reasoning),
         "bbox": detection.bbox,
-        "ocr": None,
-        "sources": {
-            "detector": detection.source,
-            "club_type_5way_classifier": prediction.source,
-        },
-        "stage_confidences": {
-            "detector": round(float(detection.confidence), 3),
-            "club_type_5way": round(float(prediction.confidence), 3),
-        },
-        "probabilities": {
-            "club_type_5way": prediction.probabilities,
-        },
+        "ocr": ocr_payload,
+        "sources": sources,
+        "stage_confidences": stage_confidences,
+        "probabilities": probabilities,
     }
-
 
 def classify_broad_category(image: Image.Image, config: Dict) -> BroadCategoryResult:
     settings = config.get("club_recognition", {})
@@ -278,6 +309,49 @@ def classify_broad_category(image: Image.Image, config: Dict) -> BroadCategoryRe
         probabilities=prediction.probabilities,
         reasoning=prediction.reasoning,
         source=prediction.source,
+    )
+
+
+def classify_club_marking(image: Image.Image, family: str, config: Dict) -> ClubDetailResult:
+    """Read an iron number, wedge loft, or letter from the club's sole/face."""
+
+    settings = config.get("club_recognition", {})
+    checkpoint_path = settings.get("club_marking_cnn_model_path")
+    if checkpoint_path:
+        prediction = _run_stage_cnn(
+            image,
+            checkpoint_path=checkpoint_path,
+            task="club_marking",
+            minimum_confidence=float(settings.get("club_marking_cnn_min_confidence", 0.0)),
+        )
+        club_type = normalize_club_marking(prediction.label, family)
+        reasoning = prediction.reasoning
+        if prediction.label is not None and club_type is None:
+            reasoning = (
+                f"Club-marking CNN returned {prediction.label!r}, which is not valid "
+                f"for a {family.lower()}."
+            )
+        return ClubDetailResult(
+            club_type=club_type,
+            confidence=prediction.confidence,
+            probabilities=prediction.probabilities,
+            reasoning=reasoning,
+            source=prediction.source,
+        )
+
+    # Preserve compatibility with an existing numbers-only iron checkpoint.
+    if family == "Iron" and settings.get("iron_number_cnn_model_path"):
+        return classify_iron_number(image, config)
+
+    return ClubDetailResult(
+        club_type=None,
+        confidence=0.0,
+        probabilities={},
+        reasoning=(
+            "The club family is visible, but the marking model is not configured. "
+            "Install models/trained/club_marking_cnn.pt to identify the exact club."
+        ),
+        source="not_configured",
     )
 
 
@@ -405,6 +479,42 @@ def normalize_five_way_club_type(label: Optional[str]) -> Optional[str]:
     return labels.get(normalized)
 
 
+def normalize_club_marking(label: Optional[str], family: str) -> Optional[str]:
+    """Convert a marking-CNN label into the exact player-facing club name."""
+
+    if label is None:
+        return None
+    normalized = _normalize_label(label)
+    iron_match = re.fullmatch(r"(?:iron_?)?([1-9])(?:_?iron)?", normalized)
+    if family == "Iron" and iron_match:
+        return f"{iron_match.group(1)} Iron"
+
+    wedge_letters = {
+        "p": "Pitching Wedge",
+        "pw": "Pitching Wedge",
+        "pitching_wedge": "Pitching Wedge",
+        "a": "Approach Wedge",
+        "aw": "Approach Wedge",
+        "approach_wedge": "Approach Wedge",
+        "g": "Gap Wedge",
+        "gw": "Gap Wedge",
+        "gap_wedge": "Gap Wedge",
+        "s": "Sand Wedge",
+        "sw": "Sand Wedge",
+        "sand_wedge": "Sand Wedge",
+        "l": "Lob Wedge",
+        "lw": "Lob Wedge",
+        "lob_wedge": "Lob Wedge",
+    }
+    if normalized in wedge_letters:
+        return wedge_letters[normalized]
+
+    degree_match = re.fullmatch(r"(?:wedge_?)?(4[6-9]|5[0-9]|6[0-4])(?:_?deg(?:ree)?)?", normalized)
+    if family == "Wedge" and degree_match:
+        return f"{degree_match.group(1)}° Wedge"
+    return None
+
+
 def normalize_iron_number(label: Optional[str]) -> Optional[int]:
     if label is None:
         return None
@@ -429,6 +539,25 @@ def normalize_wood_type(label: Optional[str]) -> Optional[str]:
 
 def _normalize_label(label: str) -> str:
     return re.sub(r"[^a-z0-9]+", "_", str(label).lower()).strip("_")
+
+
+def _club_marking_text(predicted: Optional[str]) -> Optional[str]:
+    if not predicted:
+        return None
+    number_match = re.match(r"^([1-9]) Iron$", predicted)
+    if number_match:
+        return number_match.group(1)
+    degree_match = re.match(r"^(\d{2})° Wedge$", predicted)
+    if degree_match:
+        return degree_match.group(1)
+    initials = {
+        "Pitching Wedge": "P",
+        "Approach Wedge": "A",
+        "Gap Wedge": "G",
+        "Sand Wedge": "S",
+        "Lob Wedge": "L",
+    }
+    return initials.get(predicted)
 
 
 def _iron_text_from_prediction(predicted: Optional[str]) -> Optional[str]:
