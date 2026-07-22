@@ -17,4 +17,19 @@ Five-way club-type checkpoints:
 - `trained/club_type_5way_cnn.pt` — compact custom-CNN baseline for the same
 	five classes
 
+Exact club-marking checkpoint:
+
+- `trained/club_marking_cnn.pt` — a separate CNN that runs only after the
+  five-way model selects Iron or Wedge. Its class folders are `1`–`9`,
+  `p/a/g/s/l`, and lofts `50/52/54/56/58/60`; it returns player-facing
+  names such as `7 Iron`, `Pitching Wedge`, and `56° Wedge`.
+
+Train it with:
+
+```bash
+python scripts/train_club_cnn.py --task club_marking \\
+  --data-dir data/club_cnn/club_marking \\
+  --output models/trained/club_marking_cnn.pt
+```
+
 Create them with `scripts/train_club_cnn.py`; each checkpoint stores the required task and class order, and inference validates both before using it.
