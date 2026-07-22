@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from webapp.services.gemini_coaching_service import GeminiCoachingService, _json_object_from_text, _response_text, build_gemini_evidence, validate_coaching
+from webapp.services.gemini_coaching_service import GeminiCoachingService, _coach_prompt, _json_object_from_text, _response_text, build_gemini_evidence, validate_coaching
 
 
 def test_gemini_evidence_uses_only_computed_measurements():
@@ -103,3 +103,12 @@ def test_gemini_score_gate_requires_pose_and_three_numeric_measurements():
     )
 
     assert evidence["scoring_eligibility"]["eligible"] is False
+
+
+def test_gemini_prompt_requires_an_on_range_coaching_voice():
+    prompt = _coach_prompt({"body_movement": {"knee_flex_deg": 24}})
+
+    assert "experienced, encouraging golf coach" in prompt
+    assert "pose tracking" in prompt
+    assert "next swing" in prompt
+    assert "never make it the main coaching focus" in prompt
