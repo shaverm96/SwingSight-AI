@@ -18,6 +18,7 @@ const scoreSource = document.getElementById("scoreSource");
 const coachSummary = document.getElementById("coachSummary");
 const focusText = document.getElementById("focusText");
 const clubNote = document.getElementById("clubNote");
+const mediaFeedbackList = document.getElementById("mediaFeedbackList");
 const strengthList = document.getElementById("strengthList");
 const improvementList = document.getElementById("improvementList");
 const tipList = document.getElementById("tipList");
@@ -123,6 +124,8 @@ function renderReview(result) {
     : geminiStatus === "not_configured"
       ? "Add the Gemini key to enable detailed coaching for your next swing."
       : "Detailed coaching will appear here after analysis.");
+  const nearbyFeedback = [...strengths.slice(0, 1), ...improvements.slice(0, 2)];
+  renderList(mediaFeedbackList, nearbyFeedback, "Your coach’s notes will appear beside the video when the review is ready.");
   renderList(strengthList, strengths, "Your review will highlight the best parts of this swing.");
   renderList(improvementList, improvements, "Your review will identify the highest-value change to make next.");
   renderList(tipList, tips, "Use this space for Gemini practice cues and simple on-course reminders.");
