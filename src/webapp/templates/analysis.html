@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}?v=20260721-review" />
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}?v=20260722-coach" />
   </head>
   <body>
     <div class="page-shell review-page" data-analysis-id="{{ analysis_id }}">
@@ -32,19 +32,25 @@
           </aside>
         </section>
 
-        <section class="review-main-grid">
+        <section class="review-main-grid" aria-label="Swing video and coaching">
           <article class="review-video-card">
             <div class="card-heading"><div><p class="eyebrow">See the motion</p><h2>Your swing overlay</h2></div><button id="expandOverlayButton" class="text-button" type="button">Expand</button></div>
             <div class="visualization-toolbar"><div class="toggle-group" role="group" aria-label="Video view toggle"><button id="originalViewButton" class="button toggle is-active" type="button">Original</button><button id="overlayViewButton" class="button toggle" type="button">Overlay</button></div><a id="downloadOverlayButton" class="text-button hidden" href="#" download>Download</a></div>
             <p id="visualizationStatus" class="visualization-status">Loading video…</p>
             <video id="analysisPreview" controls playsinline preload="auto"></video>
           </article>
-          <article class="coach-card">
-            <p class="eyebrow">Coach’s priority</p>
-            <h2 id="focusTitle">Your next best move</h2>
-            <p id="focusText" class="coach-focus">Loading your next focus…</p>
+          <aside class="coach-card">
+            <div>
+              <p class="eyebrow">Coach’s priority</p>
+              <h2 id="focusTitle">Your next best move</h2>
+              <p id="focusText" class="coach-focus">Loading your next focus…</p>
+            </div>
             <div class="coach-callout"><span>✦</span><p id="clubNote">Your detailed coach notes will appear here after analysis.</p></div>
-          </article>
+            <div class="coach-observations">
+              <p class="eyebrow">What I’m seeing</p>
+              <ul id="mediaFeedbackList" class="feedback-list feedback-list--compact"></ul>
+            </div>
+          </aside>
         </section>
 
         <section class="insight-section">
@@ -70,6 +76,6 @@
       </main>
     </div>
     <div id="overlayModal" class="overlay-modal hidden" aria-hidden="true"><div class="overlay-modal__backdrop"></div><section class="overlay-modal__panel" role="dialog" aria-modal="true" aria-label="Expanded overlay viewer"><div class="overlay-modal__head"><div><p class="eyebrow">Expanded view</p><h2>Overlay viewer</h2></div><button id="closeOverlayModalButton" class="button ghost" type="button">Close</button></div><div class="overlay-modal__toolbar"><div class="toggle-group" role="group" aria-label="Expanded video view toggle"><button id="modalOriginalButton" class="button toggle is-active" type="button">Original</button><button id="modalOverlayButton" class="button toggle" type="button">Overlay</button></div></div><video id="overlayModalPreview" class="overlay-modal__video" controls playsinline preload="auto"></video></section></div>
-    <script src="{{ url_for('static', filename='js/analysis.js') }}?v=20260721-review"></script>
+    <script src="{{ url_for('static', filename='js/analysis.js') }}?v=20260722-coach"></script>
   </body>
 </html>
