@@ -34,6 +34,9 @@ data/*
 !data/README.md
 models/*
 !models/README.md
+!models/trained/
+!models/trained/club_type_5way.pt
+!models/trained/club_type_5way_cnn.pt
 outputs/*
 !outputs/README.md
 reports/*
