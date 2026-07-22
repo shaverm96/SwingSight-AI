@@ -68,6 +68,29 @@ def _to_path(value: object, root: Path) -> Path:
     return path
 
 
+def configure_five_way_club_checkpoint(config: Dict, project_root: Path, trained_models_dir: Path) -> Optional[Path]:
+    """Resolve the bundled five-way club checkpoint for live UI inference.
+
+    Existing user configuration still wins, while a newly added checkpoint is
+    discovered automatically at models/trained/club_type_5way.pt.
+    """
+    settings = config.setdefault("club_recognition", {})
+    configured_path = settings.get("five_way_cnn_model_path")
+    candidates = []
+    if configured_path:
+        candidates.append(_to_path(configured_path, project_root))
+    default_path = trained_models_dir / "club_type_5way.pt"
+    if default_path not in candidates:
+        candidates.append(default_path)
+
+    for candidate in candidates:
+        if candidate.exists() and candidate.is_file():
+            resolved = candidate.resolve()
+            settings["five_way_cnn_model_path"] = str(resolved)
+            return resolved
+    return None
+
+
 def _read_csv_if_exists(path: Path) -> pd.DataFrame:
     if path.exists() and path.is_file():
         try:
@@ -230,6 +253,11 @@ class ModelManager:
         self.outputs_dir = ensure_dir(_to_path(paths.get("outputs_dir", "outputs"), self.project_root))
         self.experiments_dir = ensure_dir(self.outputs_dir / "experiments")
         self.overlays_dir = ensure_dir(self.outputs_dir / "overlays")
+        self.five_way_club_checkpoint = configure_five_way_club_checkpoint(
+            self.config,
+            self.project_root,
+            self.trained_models_dir,
+        )
 
         self.models: Dict[str, Dict[str, Any]] = {}
         self.metadata: Dict[str, pd.DataFrame] = {}
@@ -545,6 +573,9 @@ class ModelManager:
                     fallback.append(self._public_output_url(path))
         return sorted(dict.fromkeys(fallback[:5]))
 
+    def has_five_way_club_model(self) -> bool:
+        return bool(self.five_way_club_checkpoint and self.five_way_club_checkpoint.exists())
+
     def detect_club(self, frame: str | Path) -> Dict[str, Any]:
         frame_path = Path(frame)
         result = recognize_club_from_frame(str(frame_path), self.config)
@@ -680,7 +711,11 @@ class ModelManager:
             "raw": {},
         }
 
-        if club_detection.get("club") in {None, "Unknown", "", "Driver", "Iron", "Hybrid", "Wood", "Wedge"} and not self.models.get("club_detector", {}).get("available", False):
+        if (
+            club_detection.get("club") in {None, "Unknown", "", "Driver", "Iron", "Hybrid", "Wood", "Wedge"}
+            and not self.models.get("club_detector", {}).get("available", False)
+            and not self.has_five_way_club_model()
+        ):
             club_detection["club"] = "Not detected"
             club_detection["detected_club"] = "Not detected"
 
@@ -703,14 +738,18 @@ class ModelManager:
         self.logger.info("Metrics generated: %s", technical_metrics)
         self.logger.info("Club detection result: %s", club_detection)
 
-        fallback_used = not self.models.get("pose_model", {}).get("available", False) or not self.models.get("club_detector", {}).get("available", False)
+        five_way_model_loaded = self.has_five_way_club_model()
+        club_detector_loaded = bool(self.models.get("club_detector", {}).get("available", False))
+        fallback_used = not self.models.get("pose_model", {}).get("available", False) or not (club_detector_loaded or five_way_model_loaded)
 
         model_outputs = {
             "pose_model_loaded": bool(pose_runtime["loaded"]),
-            "club_model_loaded": bool(self.models.get("club_detector", {}).get("available", False)),
+            "club_model_loaded": club_detector_loaded or five_way_model_loaded,
+            "five_way_club_model_loaded": five_way_model_loaded,
+            "five_way_club_model_path": str(self.five_way_club_checkpoint) if five_way_model_loaded else None,
             "fallback_used": fallback_used,
             "pose_model_source": pose_runtime.get("source"),
-            "club_model_source": self.models.get("club_detector", {}).get("loader", "missing"),
+            "club_model_source": "five_way_cnn" if five_way_model_loaded else self.models.get("club_detector", {}).get("loader", "missing"),
         }
 
         tracking = {

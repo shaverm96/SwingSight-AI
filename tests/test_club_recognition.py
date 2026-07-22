@@ -124,3 +124,18 @@ def test_five_way_label_normalization_uses_ui_labels():
     assert club_recognition.normalize_five_way_club_type("hybrid") == "Hybrid"
     assert club_recognition.normalize_five_way_club_type("iron") == "Iron"
     assert club_recognition.normalize_five_way_club_type("wedge") == "Wedge"
+
+
+def test_five_way_checkpoint_is_automatically_resolved_for_the_runtime(tmp_path):
+    from backend.services.model_manager import configure_five_way_club_checkpoint
+
+    trained_models = tmp_path / "models" / "trained"
+    trained_models.mkdir(parents=True)
+    checkpoint = trained_models / "club_type_5way.pt"
+    checkpoint.write_bytes(b"checkpoint")
+
+    config = {"club_recognition": {}}
+    resolved = configure_five_way_club_checkpoint(config, tmp_path, trained_models)
+
+    assert resolved == checkpoint.resolve()
+    assert config["club_recognition"]["five_way_cnn_model_path"] == str(checkpoint.resolve())
