@@ -35,6 +35,12 @@ TASK_CLASSES = {
     "iron_number": tuple(str(number) for number in range(1, 10)),
     "wood_type": ("driver", "wood", "hybrid"),
     "club_type_5way": ("driver", "wood", "hybrid", "iron", "wedge"),
+    # Exact sole/face markings after the five-way model selects Iron or Wedge.
+    "club_marking": (
+        "1", "2", "3", "4", "5", "6", "7", "8", "9",
+        "p", "a", "g", "s", "l",
+        "50", "52", "54", "56", "58", "60",
+    ),
 }
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 

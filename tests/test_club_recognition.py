@@ -139,3 +139,42 @@ def test_five_way_checkpoint_is_automatically_resolved_for_the_runtime(tmp_path)
 
     assert resolved == checkpoint.resolve()
     assert config["club_recognition"]["five_way_cnn_model_path"] == str(checkpoint.resolve())
+
+
+def test_five_way_iron_runs_the_separate_marking_cnn(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        club_recognition,
+        "detect_club_head",
+        lambda image, config: club_recognition.ClubHeadDetection((0, 0, image.width, image.height), 0.8, "yolov8"),
+    )
+    monkeypatch.setattr(
+        club_recognition,
+        "classify_five_way_club_type",
+        lambda image, config: club_recognition.ClubDetailResult(
+            "Iron", 0.93, {"iron": 0.93}, "five-way CNN selected iron", "cnn"
+        ),
+    )
+    monkeypatch.setattr(
+        club_recognition,
+        "classify_club_marking",
+        lambda image, family, config: club_recognition.ClubDetailResult(
+            "7 Iron", 0.95, {"7": 0.95}, "marking CNN selected 7", "cnn"
+        ),
+    )
+
+    result = club_recognition.recognize_club_from_frame(
+        str(_image_path(tmp_path)),
+        {"club_recognition": {"five_way_cnn_model_path": "models/trained/club_type_5way.pt", "confirm_threshold": 0.6}},
+    )
+
+    assert result["status"] == "confirmed"
+    assert result["predicted_club"] == "7 Iron"
+    assert result["ocr"]["text"] == "7"
+    assert result["sources"]["club_marking_classifier"] == "cnn"
+
+
+def test_club_marking_labels_support_pitching_wedges_and_lofts():
+    assert club_recognition.normalize_club_marking("P", "Wedge") == "Pitching Wedge"
+    assert club_recognition.normalize_club_marking("56", "Wedge") == "56° Wedge"
+    assert club_recognition.normalize_club_marking("7", "Iron") == "7 Iron"
+    assert club_recognition.normalize_club_marking("7", "Wedge") is None

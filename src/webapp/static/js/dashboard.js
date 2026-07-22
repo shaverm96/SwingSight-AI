@@ -134,7 +134,7 @@ async function runGuidedCapture() {
     }
   }
   updateStep("Scan club");
-  updateStatus("Checking your club with the five-way club model…");
+  updateStatus("Checking your club with the club type and marking models…");
   const clubResult = await detectClubFromCamera();
   if (!clubResult) {
     return;

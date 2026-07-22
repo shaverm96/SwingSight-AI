@@ -28,6 +28,11 @@ club_recognition:
   # labels: driver, wood, hybrid, iron, and wedge.
   five_way_cnn_model_path: models/trained/club_type_5way.pt
   five_way_cnn_min_confidence: 0.60
+  # Stage 2 only when five-way detection returns Iron or Wedge. The marking
+  # checkpoint reads 1-9, P/A/G/S/L, and wedge lofts such as 56.
+  club_marking_cnn_model_path: models/trained/club_marking_cnn.pt
+  club_marking_cnn_min_confidence: 0.60
+  # Legacy fallback for an Iron-only numbers checkpoint.
   # Stage 1: class_names must be iron and wood (or one of the documented aliases).
   broad_cnn_model_path: models/trained/club_broad_cnn.pt
   broad_cnn_min_confidence: 0.55

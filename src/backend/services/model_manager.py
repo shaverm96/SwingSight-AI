@@ -75,6 +75,8 @@ def configure_five_way_club_checkpoint(config: Dict, project_root: Path, trained
     discovered automatically at models/trained/club_type_5way.pt.
     """
     settings = config.setdefault("club_recognition", {})
+    settings.setdefault("club_marking_cnn_model_path", str(trained_models_dir / "club_marking_cnn.pt"))
+    settings.setdefault("club_marking_cnn_min_confidence", 0.6)
     configured_path = settings.get("five_way_cnn_model_path")
     candidates = []
     if configured_path:
@@ -257,6 +259,10 @@ class ModelManager:
             self.config,
             self.project_root,
             self.trained_models_dir,
+        )
+        self.club_marking_checkpoint = _to_path(
+            self.config.get("club_recognition", {}).get("club_marking_cnn_model_path"),
+            self.project_root,
         )
 
         self.models: Dict[str, Dict[str, Any]] = {}
@@ -576,6 +582,9 @@ class ModelManager:
     def has_five_way_club_model(self) -> bool:
         return bool(self.five_way_club_checkpoint and self.five_way_club_checkpoint.exists())
 
+    def has_club_marking_model(self) -> bool:
+        return bool(self.club_marking_checkpoint and self.club_marking_checkpoint.exists())
+
     def detect_club(self, frame: str | Path) -> Dict[str, Any]:
         frame_path = Path(frame)
         result = recognize_club_from_frame(str(frame_path), self.config)
@@ -747,6 +756,8 @@ class ModelManager:
             "club_model_loaded": club_detector_loaded or five_way_model_loaded,
             "five_way_club_model_loaded": five_way_model_loaded,
             "five_way_club_model_path": str(self.five_way_club_checkpoint) if five_way_model_loaded else None,
+            "club_marking_model_loaded": self.has_club_marking_model(),
+            "club_marking_model_path": str(self.club_marking_checkpoint) if self.has_club_marking_model() else None,
             "fallback_used": fallback_used,
             "pose_model_source": pose_runtime.get("source"),
             "club_model_source": "five_way_cnn" if five_way_model_loaded else self.models.get("club_detector", {}).get("loader", "missing"),

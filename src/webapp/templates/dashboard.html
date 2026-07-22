@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}?v=20260722-club" />
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}?v=20260722-club-marking" />
   </head>
   <body>
     <div class="page-shell start-page">
@@ -41,7 +41,7 @@
             </article>
             <article class="option-card record-card">
               <div class="option-icon option-icon--dark" aria-hidden="true">◉</div>
-              <div><p class="card-kicker">On the range</p><h3>Record a swing</h3><p>Use your camera for an easy guided capture. Our club model checks your club before you swing.</p></div>
+              <div><p class="card-kicker">On the range</p><h3>Record a swing</h3><p>Use your camera for an easy guided capture. Our club models check the club type, then read its number or loft before you swing.</p></div>
               <div class="record-tip"><span>✦</span> Best results: set your phone at waist height, facing your side.</div>
               <div class="option-actions"><button id="recordTrigger" class="button button-dark">Open camera <span>→</span></button></div>
             </article>
@@ -49,7 +49,7 @@
         </section>
         <section id="recordPanel" class="record-panel hidden">
           <div class="panel-head"><div><p class="eyebrow">Live capture</p><h2>Set up your swing</h2></div><div id="recordStep" class="step-pill">Step: Ready</div></div>
-          <p id="recordClubStatus" class="record-club-status">Show the club head to the camera, then start your guided capture.</p>
+          <p id="recordClubStatus" class="record-club-status">Show the sole or face clearly to the camera. We’ll read the club type, number, or loft before recording.</p>
           <video id="livePreview" muted playsinline></video>
           <div class="record-actions"><button id="startGuideButton" class="button primary">Scan club &amp; start</button><button id="cancelRecordButton" class="button ghost">Cancel</button></div>
         </section>
@@ -64,6 +64,6 @@
         <p id="analysisProgressElapsed" class="progress-elapsed">Just getting started</p>
       </section>
     </div>
-    <script src="{{ url_for('static', filename='js/dashboard.js') }}?v=20260722-club"></script>
+    <script src="{{ url_for('static', filename='js/dashboard.js') }}?v=20260722-club-marking"></script>
   </body>
 </html>

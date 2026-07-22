@@ -18,6 +18,8 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "confirm_threshold": 0.6,
         "five_way_cnn_model_path": "models/trained/club_type_5way.pt",
         "five_way_cnn_min_confidence": 0.6,
+        "club_marking_cnn_model_path": "models/trained/club_marking_cnn.pt",
+        "club_marking_cnn_min_confidence": 0.6,
     },
 }
 
