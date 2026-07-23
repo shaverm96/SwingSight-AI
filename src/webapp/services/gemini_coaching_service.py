@@ -3,9 +3,12 @@ from __future__ import annotations
 import json
 import logging
 import os
+from pathlib import Path
 from typing import Any, Dict, Iterable
 
 import requests
+
+from swingsight.config import load_dotenv
 
 
 LOGGER = logging.getLogger(__name__)
@@ -302,13 +305,31 @@ class GeminiCoachingService:
         # its structured answer. Leave enough room for the complete JSON object.
         self.max_output_tokens = max(1024, int(settings.get("max_output_tokens", 4096)))
         self.api_key_env = str(settings.get("api_key_env") or "GEMINI_API_KEY")
-        self.api_key = os.getenv(self.api_key_env, "").strip()
+        self.api_key, self.api_key_source = self._read_api_key()
+
+    def _read_api_key(self) -> tuple[str, str | None]:
+        # Re-read the project .env so keys added after the local server starts
+        # are available without a full Windows sign-out or application restart.
+        load_dotenv(Path.cwd() / ".env")
+
+        candidates = [self.api_key_env]
+        if self.api_key_env == "GEMINI_API_KEY":
+            candidates.append("GOOGLE_API_KEY")
+
+        for environment_name in dict.fromkeys(candidates):
+            value = os.getenv(environment_name, "").strip()
+            if value:
+                return value, environment_name
+        return "", None
 
     def coach(self, analysis: Dict[str, Any], conventional_coaching: Dict[str, Any]) -> Dict[str, Any]:
+        self.api_key, self.api_key_source = self._read_api_key()
         evidence = build_gemini_evidence(analysis, conventional_coaching)
         base = {
             "enabled": self.enabled,
             "model": self.model,
+            "api_key_env": self.api_key_env,
+            "api_key_detected": bool(self.api_key),
             "input_mode": "structured_cv_evidence_only",
             "video_shared_with_gemini": False,
             "evidence_fields": {
