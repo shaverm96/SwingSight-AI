@@ -320,8 +320,11 @@ button:focus-visible, select:focus-visible, a:focus-visible {
 .hero-kpi-ring { width: clamp(112px, 9.4vw, 146px); aspect-ratio: 1; display: grid; place-items: center; align-self: center; justify-self: center; position: relative; border-radius: 50%; background: conic-gradient(#1c7b42 calc(var(--kpi-progress) * 1%), #dfe6e0 0); }
 .hero-kpi-ring::after { content: ""; position: absolute; inset: 9px; background: #fff; border-radius: inherit; }
 .hero-kpi-ring strong { position: relative; z-index: 1; color: #164329; font-size: clamp(2rem, 3vw, 3.1rem); line-height: 1; letter-spacing: -.08em; }
-.hero-kpi-status { margin: 0; color: #187c3e; font-size: .7rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
-.hero-kpi-status.is-unknown { color: #8b948d; }
+.hero-kpi-status { margin: 0; font-size: .7rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.hero-kpi-status.status-strong, .hero-kpi-status.status-on-track { color: #187c3e; }
+.hero-kpi-status.status-developing { color: #c78209; }
+.hero-kpi-status.status-needs-work { color: #d43c27; }
+.hero-kpi-status.status-more-data { color: #8b948d; }
 .review-session-meta { margin-top: 24px; }
 .coach-summary { margin: 0; color: #617064; font-size: .9rem; line-height: 1.55; }
 
