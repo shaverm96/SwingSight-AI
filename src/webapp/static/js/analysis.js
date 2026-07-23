@@ -6,11 +6,11 @@ const state = {
   originalVideoUrl: null,
   overlayVideoUrl: null,
   modalOpen: false,
+  kpis: {},
 };
 
 const reviewStatus = document.getElementById("reviewStatus");
 const reviewClub = document.getElementById("reviewClub");
-const reviewId = document.getElementById("reviewId");
 const reviewScore = document.getElementById("reviewScore");
 const reviewGrade = document.getElementById("reviewGrade");
 const scoreContext = document.getElementById("scoreContext");
@@ -40,6 +40,10 @@ const expandOverlayButton = document.getElementById("expandOverlayButton");
 const closeOverlayModalButton = document.getElementById("closeOverlayModalButton");
 const modalOriginalButton = document.getElementById("modalOriginalButton");
 const modalOverlayButton = document.getElementById("modalOverlayButton");
+const kpiInfoModal = document.getElementById("kpiInfoModal");
+const kpiInfoTitle = document.getElementById("kpiInfoTitle");
+const kpiInfoDescription = document.getElementById("kpiInfoDescription");
+const closeKpiInfoButton = document.getElementById("closeKpiInfoButton");
 
 originalViewButton.addEventListener("click", () => setVideoMode("original"));
 overlayViewButton.addEventListener("click", () => setVideoMode("overlay"));
@@ -47,6 +51,17 @@ expandOverlayButton.addEventListener("click", openOverlayModal);
 closeOverlayModalButton.addEventListener("click", closeOverlayModal);
 modalOriginalButton.addEventListener("click", () => setModalMode("original"));
 modalOverlayButton.addEventListener("click", () => setModalMode("overlay"));
+closeKpiInfoButton?.addEventListener("click", closeKpiInfo);
+heroKpiList?.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-kpi-key]");
+  if (button) openKpiInfo(button.dataset.kpiKey);
+});
+kpiInfoModal?.addEventListener("click", (event) => {
+  if (event.target === kpiInfoModal || event.target.classList.contains("kpi-info-modal__backdrop")) closeKpiInfo();
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !kpiInfoModal?.classList.contains("hidden")) closeKpiInfo();
+});
 overlayModal.addEventListener("click", (event) => {
   if (event.target === overlayModal || event.target.classList.contains("overlay-modal__backdrop")) {
     closeOverlayModal();
@@ -95,7 +110,6 @@ function renderReview(result) {
       ? "Gemini coaching needs a retry"
       : result.status === "success" ? "Vision review ready" : "Review needs attention";
   reviewClub.textContent = result.club || result.detected_club || "Not detected";
-  reviewId.textContent = result.analysis_id || analysisId;
   reviewScore.textContent = Number.isFinite(score) ? Math.round(score) : "--";
   reviewGrade.textContent = result.score_label || "Review ready";
   const geminiScore = detailed?.overall_score;
@@ -173,61 +187,90 @@ function renderHeroKpis(result) {
 
   const kpis = [
     {
-      name: "Overall Swing Score",
-      shortName: "GOATScore",
-      score: Number.isFinite(overall) ? Math.max(0, Math.min(100, overall)) : null,
-      detail: "Your all-in rating for movement quality, posture, and arm mechanics.",
-    },
-    {
+      key: "sequence",
       name: "Kinematic Sequence",
-      shortName: "Sequence",
       score: numberMetric(metrics, "kinematic_sequence_score", "tempo_estimate"),
-      detail: "How efficiently your pelvis, torso, and arms pass the swing along.",
+      detail: "Measures the order and efficiency with which your body segments accelerate and decelerate—pelvis, then torso, then arms. SwingSight estimates the sequence from motion peaks in the side-view pose data.",
     },
     {
+      key: "xfactor",
       name: "X-Factor Separation",
-      shortName: "X-Factor",
       score: numberMetric(metrics, "x_factor_score"),
-      detail: "Your hip-to-shoulder separation at the top—the coil that helps create speed.",
+      detail: "The rotational difference between your pelvis and upper torso near the top of the backswing—the coil that helps create speed. This is a 2D video proxy, so a square side view gives the cleanest reading.",
     },
     {
+      key: "spine",
       name: "Spine Angle Maintenance",
-      shortName: "Posture",
       score: spineScore,
-      detail: "How consistently you hold your address posture through impact.",
+      detail: "Tracks how consistently you maintain spinal tilt and posture from address toward impact, helping you keep a repeatable strike zone and swing plane.",
     },
     {
+      key: "weightShift",
       name: "Lateral Weight Shift",
-      shortName: "Weight shift",
       score: numberMetric(metrics, "lateral_weight_shift_score", "balance_score", "weight_shift"),
-      detail: "How your pressure moves toward the lead side without too much sway.",
+      detail: "Monitors your lateral movement and pressure-transfer proxy toward the lead side, looking for a centered move without too much sway or thrust.",
+    },
+    {
+      key: "overall",
+      name: "Overall Swing Score",
+      score: Number.isFinite(overall) ? Math.max(0, Math.min(100, overall)) : null,
+      detail: "A 0–100 all-in SwingSight rating that combines measured sequencing, posture, and arm mechanics against the app’s movement-quality model. It is a video-based estimate, not a launch-monitor reading.",
     },
   ];
 
+  state.kpis = Object.fromEntries(kpis.map((kpi) => [kpi.key, kpi]));
   heroKpiList.innerHTML = "";
-  kpis.forEach((kpi, index) => {
+
+  kpis.forEach((kpi) => {
     const score = Number.isFinite(kpi.score) ? Math.round(kpi.score) : null;
     const item = document.createElement("li");
     item.className = "hero-kpi-item";
+    item.style.setProperty("--kpi-progress", String(score ?? 0));
 
-    const rank = document.createElement("span");
-    rank.className = "hero-kpi-rank";
-    rank.textContent = String(index + 1).padStart(2, "0");
+    const heading = document.createElement("div");
+    heading.className = "hero-kpi-heading";
 
-    const copy = document.createElement("div");
-    copy.className = "hero-kpi-copy";
-    copy.innerHTML = "<strong></strong><span></span><p></p>";
-    copy.querySelector("strong").textContent = kpi.name;
-    copy.querySelector("span").textContent = kpi.detail;
-    copy.querySelector("p").textContent = score === null ? "2D pose data was not sufficient to rank this one yet." : kpiStatus(score);
+    const title = document.createElement("strong");
+    title.textContent = kpi.name;
 
-    const scoreValue = document.createElement("strong");
-    scoreValue.className = "hero-kpi-score";
-    scoreValue.textContent = score === null ? "—" : score;
+    const info = document.createElement("button");
+    info.className = "kpi-info-button";
+    info.type = "button";
+    info.dataset.kpiKey = kpi.key;
+    info.setAttribute("aria-label", "About " + kpi.name);
+    info.setAttribute("aria-haspopup", "dialog");
+    info.textContent = "i";
 
-    item.append(rank, copy, scoreValue);
+    heading.append(title, info);
+
+    const ring = document.createElement("div");
+    ring.className = "hero-kpi-ring";
+    ring.setAttribute("aria-label", score === null ? kpi.name + ": more data needed" : kpi.name + ": " + score + " out of 100");
+    ring.innerHTML = "<strong>" + (score === null ? "—" : score) + "</strong>";
+
+    const status = document.createElement("p");
+    status.className = "hero-kpi-status" + (score === null ? " is-unknown" : "");
+    status.textContent = score === null ? "More data" : kpiStatus(score);
+
+    item.append(heading, ring, status);
     heroKpiList.appendChild(item);
   });
+}
+
+function openKpiInfo(key) {
+  const kpi = state.kpis[key];
+  if (!kpi || !kpiInfoModal) return;
+  kpiInfoTitle.textContent = kpi.name;
+  kpiInfoDescription.textContent = kpi.detail;
+  kpiInfoModal.classList.remove("hidden");
+  kpiInfoModal.setAttribute("aria-hidden", "false");
+  closeKpiInfoButton?.focus();
+}
+
+function closeKpiInfo() {
+  if (!kpiInfoModal) return;
+  kpiInfoModal.classList.add("hidden");
+  kpiInfoModal.setAttribute("aria-hidden", "true");
 }
 
 function firstText(...values) {
