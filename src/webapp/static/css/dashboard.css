@@ -311,21 +311,39 @@ button:focus-visible, select:focus-visible, a:focus-visible {
 
 /* KPI rankings in the review hero */
 .hero-kpi-panel { min-width: 0; }
-.hero-kpi-panel h1 { max-width: 690px; margin: 8px 0 6px; font-size: clamp(1.75rem, 2.8vw, 3.15rem); line-height: 1.04; letter-spacing: -.06em; }
-.hero-kpi-intro { margin: 0; color: #68766a; font-size: .92rem; line-height: 1.45; }
-.hero-kpi-list { display: grid; gap: 8px; padding: 0; margin: 20px 0 0; list-style: none; }
-.hero-kpi-item { display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; gap: 11px; align-items: center; padding: 10px 13px; background: rgba(255,255,255,.72); border: 1px solid rgba(20, 74, 35, .09); border-radius: 13px; }
-.hero-kpi-rank { color: #6d8170; font: .68rem "DM Mono", monospace; letter-spacing: .04em; }
-.hero-kpi-copy { min-width: 0; }
-.hero-kpi-copy strong { display: block; color: #173f24; font-size: .87rem; line-height: 1.25; }
-.hero-kpi-copy span { display: block; margin-top: 2px; color: #6d796e; font-size: .75rem; line-height: 1.35; }
-.hero-kpi-copy p { margin: 3px 0 0; color: #1f6f3a; font-size: .69rem; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; }
-.hero-kpi-score { min-width: 40px; color: #143e24; font-size: 1.6rem; line-height: 1; letter-spacing: -.06em; text-align: right; }
+.hero-kpi-list { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; padding: 0; margin: 32px 0 0; list-style: none; }
+.hero-kpi-item { display: grid; grid-template-rows: auto 1fr auto; gap: 16px; min-height: 270px; padding: 20px 16px 18px; text-align: center; background: rgba(255,255,255,.79); border: 1px solid rgba(20, 74, 35, .09); border-radius: 18px; box-shadow: 0 8px 18px rgba(26, 67, 36, .05); }
+.hero-kpi-heading { display: flex; align-items: flex-start; justify-content: center; gap: 7px; min-height: 40px; }
+.hero-kpi-heading strong { color: #173f24; font-size: .88rem; line-height: 1.33; letter-spacing: -.025em; }
+.kpi-info-button { width: 19px; height: 19px; flex: 0 0 19px; display: inline-grid; place-items: center; margin-top: 1px; padding: 0; color: #9aa49c; font: 700 .71rem/1 "DM Mono", monospace; background: transparent; border: 1px solid #c6cec7; border-radius: 50%; cursor: pointer; }
+.kpi-info-button:hover, .kpi-info-button:focus-visible { color: #245d33; border-color: #4d9e63; outline: none; box-shadow: 0 0 0 3px rgba(57, 145, 81, .14); }
+.hero-kpi-ring { width: clamp(112px, 9.4vw, 146px); aspect-ratio: 1; display: grid; place-items: center; align-self: center; justify-self: center; position: relative; border-radius: 50%; background: conic-gradient(#1c7b42 calc(var(--kpi-progress) * 1%), #dfe6e0 0); }
+.hero-kpi-ring::after { content: ""; position: absolute; inset: 9px; background: #fff; border-radius: inherit; }
+.hero-kpi-ring strong { position: relative; z-index: 1; color: #164329; font-size: clamp(2rem, 3vw, 3.1rem); line-height: 1; letter-spacing: -.08em; }
+.hero-kpi-status { margin: 0; color: #187c3e; font-size: .7rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.hero-kpi-status.is-unknown { color: #8b948d; }
+.review-session-meta { margin-top: 24px; }
 .coach-summary { margin: 0; color: #617064; font-size: .9rem; line-height: 1.55; }
 
+.kpi-info-modal { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 20px; }
+.kpi-info-modal__backdrop { position: absolute; inset: 0; background: rgba(18, 27, 18, .42); backdrop-filter: blur(12px) saturate(120%); }
+.kpi-info-modal__panel { position: relative; width: min(490px, 100%); padding: 28px; background: #fbfdf9; border: 1px solid rgba(255,255,255,.85); border-radius: 22px; box-shadow: 0 30px 80px rgba(13, 38, 18, .28); }
+.kpi-info-modal__head { display: flex; justify-content: space-between; gap: 20px; align-items: flex-start; }
+.kpi-info-modal__head h2 { margin: 7px 0 0; color: #173f24; font-size: 1.55rem; letter-spacing: -.05em; }
+.kpi-info-modal__description { margin: 24px 0 0; color: #405046; font-size: .96rem; line-height: 1.65; }
+.kpi-info-modal__note { margin: 18px 0 0; padding-top: 16px; color: #758077; font-size: .78rem; line-height: 1.5; border-top: 1px solid rgba(20, 74, 35, .11); }
+
+@media (max-width: 1180px) {
+  .hero-kpi-list { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
 @media (max-width: 680px) {
-  .hero-kpi-panel h1 { font-size: 1.7rem; }
-  .hero-kpi-item { grid-template-columns: 25px minmax(0, 1fr) auto; gap: 8px; padding: 10px; }
-  .hero-kpi-copy span { font-size: .72rem; }
-  .hero-kpi-score { min-width: 33px; font-size: 1.35rem; }
+  .hero-kpi-list { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 24px; }
+  .hero-kpi-item { min-height: 220px; padding: 15px 10px; gap: 11px; border-radius: 15px; }
+  .hero-kpi-heading { min-height: 36px; gap: 5px; }
+  .hero-kpi-heading strong { font-size: .78rem; }
+  .kpi-info-button { width: 17px; height: 17px; flex-basis: 17px; font-size: .65rem; }
+  .hero-kpi-ring { width: min(110px, 100%); }
+  .hero-kpi-status { font-size: .62rem; }
+  .kpi-info-modal { padding: 14px; }
+  .kpi-info-modal__panel { padding: 22px; border-radius: 18px; }
 }
