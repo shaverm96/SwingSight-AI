@@ -5,6 +5,7 @@ set "SCRIPT_DIR=%~dp0..\"
 set "VENV_DIR=%SCRIPT_DIR%.venv"
 set "VENV_PYTHON=%VENV_DIR%\Scripts\python.exe"
 set "REQUIREMENTS_FILE=%SCRIPT_DIR%requirements.txt"
+set "SWINGSIGHT_OPEN_BROWSER=true"
 cd /d "%SCRIPT_DIR%"
 
 if not exist "%REQUIREMENTS_FILE%" (
