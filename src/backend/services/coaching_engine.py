@@ -135,87 +135,87 @@ class CoachingEngine:
         else:
             tempo_estimate = self._metric(metrics, "tempo_estimate")
             if tempo_estimate is None or tempo_estimate < 70:
-                improvements.append("Build a smoother, more repeatable tempo.")
+                improvements.append("Let the backswing and downswing share the same rhythm—no need to rush the good part.")
 
         head_stability = self._metric(metrics, "head_movement_cm", "head_stability")
         if head_stability is None:
             if not fallback_used:
-                improvements.append("Try keeping your head more stable through impact")
+                improvements.append("Keep your head nice and quiet through impact—let the club do the traveling.")
         elif head_stability < 80:
-            improvements.append("Try keeping your head more stable through impact")
+            improvements.append("Keep your head nice and quiet through impact—let the club do the traveling.")
         else:
-            strengths.append("Consistent head position")
+            strengths.append("Nice quiet head through the swing—steady is plenty.")
 
         hip_rotation = self._metric(metrics, "hip_turn_proxy", "hip_rotation")
         if hip_rotation is None:
             if not fallback_used:
-                improvements.append("Improve hip rotation through impact")
+                improvements.append("Give those hips a little more turn through impact—let them join the party.")
         elif hip_rotation < 70:
-            improvements.append("Improve hip rotation through impact")
+            improvements.append("Give those hips a little more turn through impact—let them join the party.")
         else:
-            strengths.append("Good hip turn through the swing")
+            strengths.append("Good hip turn through the swing—you're clearing space nicely.")
 
         shoulder_rotation = self._metric(metrics, "shoulder_turn_proxy", "shoulder_rotation")
         if shoulder_rotation is None:
             if not fallback_used:
-                improvements.append("Let your shoulders turn a little more freely")
+                improvements.append("Let your shoulders make a fuller turn—no need to keep them on a short leash.")
         elif shoulder_rotation < 70:
-            improvements.append("Let your shoulders turn a little more freely")
+            improvements.append("Let your shoulders make a fuller turn—no need to keep them on a short leash.")
         else:
-            strengths.append("Strong shoulder turn")
+            strengths.append("Strong shoulder turn—keep that coil working for you.")
 
         spine_angle = self._metric(metrics, "spine_angle_deg", "spine_angle")
         if spine_angle is None:
             if not fallback_used:
-                improvements.append("Keep your posture more steady")
+                improvements.append("Hold your posture a touch steadier—athletic, not stiff as a coat rack.")
         elif abs(spine_angle - 10.0) > 8.0:
-            improvements.append("Keep your posture more steady")
+            improvements.append("Hold your posture a touch steadier—athletic, not stiff as a coat rack.")
         else:
-            strengths.append("Your setup looks balanced")
+            strengths.append("Your setup looks balanced—an athletic place to start.")
 
         balance_score = self._metric(metrics, "balance_score", "weight_shift")
         if balance_score is not None and balance_score >= 70:
-            strengths.append("Balanced lower-body control")
+            strengths.append("Your lower body stays nicely balanced—good work keeping the floor under you.")
 
         tempo_estimate = self._metric(metrics, "tempo_estimate")
         if tempo_estimate is not None and tempo_estimate >= 70:
-            strengths.append("Smooth tempo")
+            strengths.append("Your tempo stays smooth—keep that easy rhythm rolling.")
 
         knee_flex = self._metric(metrics, "knee_flex_deg")
         if knee_flex is not None and knee_flex < 135:
-            improvements.append("Let your knees stay a little softer through the swing")
+            improvements.append("Give your knees a little more flex at setup—athletic, not waiting in a checkout line.")
 
         club_path = str(metrics.get("club_path", "")).lower()
         if club_path == "outside_in":
-            improvements.append("Reduce your outside-in club path")
+            improvements.append("Work the club a little less outside-in—let's keep it from cutting across the ball.")
         elif club_path == "inside_out":
-            strengths.append("Nice inside-out path")
+            strengths.append("Nice inside-out path—keep swinging out toward your target.")
 
         if club_note and club_note not in improvements:
             improvements.append(club_note)
 
         if not strengths:
-            strengths.append("Solid swing foundation")
+            strengths.append("You've got a solid base here—now let's give it a little polish.")
 
         if not improvements:
-            improvements.append("Keep repeating the same smooth motion")
+            improvements.append("Keep repeating that smooth motion—boring practice is where the good golf lives.")
 
         return strengths[:3], improvements[:3]
 
     def _choose_next_focus(self, metrics: Dict[str, object], improvements: Iterable[str], *, fallback_used: bool) -> str:
         if fallback_used:
-            return "Record from a clear side angle with your full body in frame."
+            return "Give me a clear side view with your whole body in frame, and we'll have plenty to work with."
 
         club_path = str(metrics.get("club_path", "")).lower()
         if club_path == "outside_in":
-            return "Work on shallowing the club during the downswing"
+            return "Let's shallow the club a touch in the downswing and give it room to approach from the inside."
 
         head_stability = self._metric(metrics, "head_movement_cm", "head_stability")
         if head_stability is None or head_stability < 80:
-            return "Keep your head steady through impact"
+            return "Keep that head quiet through impact—let the club be the one making all the noise."
 
         improvement_list = list(improvements)
         if improvement_list:
             return improvement_list[0]
 
-        return "Keep your tempo smooth and finish balanced"
+        return "Keep the rhythm smooth and finish in balance—you want to pose for the camera, not chase the ball."
