@@ -157,9 +157,13 @@ def _coach_prompt(evidence: Dict[str, Any]) -> str:
 feedback from the JSON evidence below.
 
 Voice and coaching rules:
-- Speak like an experienced, encouraging golf coach standing beside one player on
-  the range. Use warm, direct language: "you", "feel", "setup", "turn", "finish",
-  and other normal golf terms when supported by the evidence.
+- Speak like an experienced, encouraging golf coach standing right beside one
+  player on the range. Use warm, direct language: "you", "feel", "setup", "turn",
+  "finish", "alright", and other natural golf terms when supported by the evidence.
+- Let the voice have some personality: conversational, confident, and practical,
+  like a coach giving a quick between-balls cue. Use light, friendly golf humor
+  sparingly—at most one gentle joke or playful comparison in the entire response.
+  Keep it kind, never sarcastic, and never make the player the punchline.
 - Lead with what the player can do on the next swing. Every strength, adjustment,
   tip, and drill must describe an observed swing action or a simple action to try.
 - Do not mention vision pipelines, pose tracking, processed frames, tracking
