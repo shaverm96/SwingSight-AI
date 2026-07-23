@@ -17,6 +17,7 @@ const scoreContext = document.getElementById("scoreContext");
 const scoreSource = document.getElementById("scoreSource");
 const coachSummary = document.getElementById("coachSummary");
 const focusText = document.getElementById("focusText");
+const heroKpiList = document.getElementById("heroKpiList");
 const clubNote = document.getElementById("clubNote");
 const mediaFeedbackList = document.getElementById("mediaFeedbackList");
 const strengthList = document.getElementById("strengthList");
@@ -119,11 +120,10 @@ function renderReview(result) {
   }
   coachSummary.textContent = summary || "Your personalized swing feedback is ready.";
   focusText.textContent = result.next_focus || firstText(detailed.next_focus, detailed.priority) || "Use the feedback below to guide your next practice swing.";
-  clubNote.textContent = result.club_note || firstText(detailed.coach_note, detailed.context) || (geminiIssue
-    ? "The swing analysis is saved, but Gemini’s response was not usable. A new recording will retry coaching automatically."
-    : geminiStatus === "not_configured"
-      ? "Your local coach's notes are ready below. Add the Gemini key for an even more detailed, range-side review."
-      : "Your coach's detailed notes will appear here after analysis.");
+  renderHeroKpis(result);
+  if (clubNote) {
+    clubNote.textContent = result.club_note || firstText(detailed.coach_note, detailed.context) || "";
+  }
   const nearbyFeedback = [...strengths.slice(0, 1), ...improvements.slice(0, 2)];
   renderList(mediaFeedbackList, nearbyFeedback, "Your coach’s notes will appear beside the video when the review is ready.");
   renderList(strengthList, strengths, "Your review will highlight the best parts of this swing.");
@@ -142,6 +142,92 @@ function renderReview(result) {
   advancedMetrics.textContent = JSON.stringify({ advanced_metrics: result.advanced_metrics || {}, warnings: result.warnings || [] }, null, 2);
   advancedTracking.textContent = JSON.stringify(result.tracking || {}, null, 2);
   advancedModels.textContent = JSON.stringify({ model_outputs: result.model_outputs || {}, detailed_coaching: detailed }, null, 2);
+}
+
+function numberMetric(metrics, ...names) {
+  for (const name of names) {
+    const value = Number(metrics?.[name]);
+    if (Number.isFinite(value)) return Math.max(0, Math.min(100, value));
+  }
+  return null;
+}
+
+function kpiStatus(score) {
+  if (!Number.isFinite(score)) return "Needs more data";
+  if (score >= 85) return "Strong";
+  if (score >= 70) return "On track";
+  if (score >= 50) return "Developing";
+  return "Needs work";
+}
+
+function renderHeroKpis(result) {
+  if (!heroKpiList) return;
+
+  const metrics = result.advanced_metrics || result.advanced || {};
+  const overall = Number(result.swing_score);
+  const spineScore = numberMetric(metrics, "spine_maintenance_score")
+    ?? (() => {
+      const angle = Number(metrics.spine_angle_variation_deg);
+      return Number.isFinite(angle) ? Math.max(0, Math.min(100, 100 - angle * 8)) : null;
+    })();
+
+  const kpis = [
+    {
+      name: "Overall Swing Score",
+      shortName: "GOATScore",
+      score: Number.isFinite(overall) ? Math.max(0, Math.min(100, overall)) : null,
+      detail: "Your all-in rating for movement quality, posture, and arm mechanics.",
+    },
+    {
+      name: "Kinematic Sequence",
+      shortName: "Sequence",
+      score: numberMetric(metrics, "kinematic_sequence_score", "tempo_estimate"),
+      detail: "How efficiently your pelvis, torso, and arms pass the swing along.",
+    },
+    {
+      name: "X-Factor Separation",
+      shortName: "X-Factor",
+      score: numberMetric(metrics, "x_factor_score"),
+      detail: "Your hip-to-shoulder separation at the top—the coil that helps create speed.",
+    },
+    {
+      name: "Spine Angle Maintenance",
+      shortName: "Posture",
+      score: spineScore,
+      detail: "How consistently you hold your address posture through impact.",
+    },
+    {
+      name: "Lateral Weight Shift",
+      shortName: "Weight shift",
+      score: numberMetric(metrics, "lateral_weight_shift_score", "balance_score", "weight_shift"),
+      detail: "How your pressure moves toward the lead side without too much sway.",
+    },
+  ];
+
+  heroKpiList.innerHTML = "";
+  kpis.forEach((kpi, index) => {
+    const score = Number.isFinite(kpi.score) ? Math.round(kpi.score) : null;
+    const item = document.createElement("li");
+    item.className = "hero-kpi-item";
+
+    const rank = document.createElement("span");
+    rank.className = "hero-kpi-rank";
+    rank.textContent = String(index + 1).padStart(2, "0");
+
+    const copy = document.createElement("div");
+    copy.className = "hero-kpi-copy";
+    copy.innerHTML = "<strong></strong><span></span><p></p>";
+    copy.querySelector("strong").textContent = kpi.name;
+    copy.querySelector("span").textContent = kpi.detail;
+    copy.querySelector("p").textContent = score === null ? "2D pose data was not sufficient to rank this one yet." : kpiStatus(score);
+
+    const scoreValue = document.createElement("strong");
+    scoreValue.className = "hero-kpi-score";
+    scoreValue.textContent = score === null ? "—" : score;
+
+    item.append(rank, copy, scoreValue);
+    heroKpiList.appendChild(item);
+  });
 }
 
 function firstText(...values) {
