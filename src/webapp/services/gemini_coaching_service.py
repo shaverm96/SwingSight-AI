@@ -312,9 +312,7 @@ class GeminiCoachingService:
         # are available without a full Windows sign-out or application restart.
         load_dotenv(Path.cwd() / ".env")
 
-        candidates = [self.api_key_env]
-        if self.api_key_env == "GEMINI_API_KEY":
-            candidates.append("GOOGLE_API_KEY")
+        candidates = [self.api_key_env, "GEMINI_API_KEY", "GOOGLE_API_KEY"]
 
         for environment_name in dict.fromkeys(candidates):
             value = os.getenv(environment_name, "").strip()
