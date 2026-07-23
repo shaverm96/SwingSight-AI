@@ -122,8 +122,8 @@ function renderReview(result) {
   clubNote.textContent = result.club_note || firstText(detailed.coach_note, detailed.context) || (geminiIssue
     ? "The swing analysis is saved, but Gemini’s response was not usable. A new recording will retry coaching automatically."
     : geminiStatus === "not_configured"
-      ? "Add the Gemini key to enable detailed coaching for your next swing."
-      : "Detailed coaching will appear here after analysis.");
+      ? "Your local coach's notes are ready below. Add the Gemini key for an even more detailed, range-side review."
+      : "Your coach's detailed notes will appear here after analysis.");
   const nearbyFeedback = [...strengths.slice(0, 1), ...improvements.slice(0, 2)];
   renderList(mediaFeedbackList, nearbyFeedback, "Your coach’s notes will appear beside the video when the review is ready.");
   renderList(strengthList, strengths, "Your review will highlight the best parts of this swing.");
