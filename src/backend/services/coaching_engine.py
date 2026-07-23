@@ -125,7 +125,7 @@ class CoachingEngine:
         strengths: List[str] = []
         improvements: List[str] = []
 
-        if video_processed:
+        if video_processed and fallback_used:
             strengths.append("Your swing was uploaded successfully.")
             strengths.append("We were able to process the video preview.")
 
@@ -133,7 +133,9 @@ class CoachingEngine:
             improvements.append("Try recording from a clear side angle with your full body visible.")
             improvements.append("Keep the camera still and avoid zooming.")
         else:
-            improvements.append("Keep your tempo smooth and repeat this motion.")
+            tempo_estimate = self._metric(metrics, "tempo_estimate")
+            if tempo_estimate is None or tempo_estimate < 70:
+                improvements.append("Build a smoother, more repeatable tempo.")
 
         head_stability = self._metric(metrics, "head_movement_cm", "head_stability")
         if head_stability is None:
