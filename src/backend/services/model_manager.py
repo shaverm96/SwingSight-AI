@@ -301,7 +301,10 @@ class ModelManager:
             "model": None,
         }
         if path is None:
-            self.logger.warning("Missing model artifact for %s", model_key)
+            self.logger.info(
+                "Optional model artifact not found for %s; using an available fallback when possible.",
+                model_key,
+            )
             return record
 
         suffix = path.suffix.lower()
@@ -749,7 +752,9 @@ class ModelManager:
 
         five_way_model_loaded = self.has_five_way_club_model()
         club_detector_loaded = bool(self.models.get("club_detector", {}).get("available", False))
-        fallback_used = not self.models.get("pose_model", {}).get("available", False) or not (club_detector_loaded or five_way_model_loaded)
+        # A downloaded Ultralytics pose model is a valid local analysis model.
+        # Missing optional club/custom checkpoints should not suppress pose-based feedback.
+        fallback_used = not pose_runtime["loaded"] or pose_frames_detected == 0
 
         model_outputs = {
             "pose_model_loaded": bool(pose_runtime["loaded"]),
