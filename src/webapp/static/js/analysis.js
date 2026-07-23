@@ -249,8 +249,9 @@ function renderHeroKpis(result) {
     ring.innerHTML = "<strong>" + (score === null ? "—" : score) + "</strong>";
 
     const status = document.createElement("p");
-    status.className = "hero-kpi-status" + (score === null ? " is-unknown" : "");
-    status.textContent = score === null ? "More data" : kpiStatus(score);
+    const statusLabel = score === null ? "More data" : kpiStatus(score);
+    status.className = "hero-kpi-status status-" + statusLabel.toLowerCase().replace(/\s+/g, "-");
+    status.textContent = statusLabel;
 
     item.append(heading, ring, status);
     heroKpiList.appendChild(item);
