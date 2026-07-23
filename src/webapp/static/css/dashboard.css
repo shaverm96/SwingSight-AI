@@ -307,3 +307,25 @@ button:focus-visible, select:focus-visible, a:focus-visible {
   .review-main-grid { grid-template-columns: 1fr; }
   .coach-card { gap: 18px; }
 }
+
+
+/* KPI rankings in the review hero */
+.hero-kpi-panel { min-width: 0; }
+.hero-kpi-panel h1 { max-width: 690px; margin: 8px 0 6px; font-size: clamp(1.75rem, 2.8vw, 3.15rem); line-height: 1.04; letter-spacing: -.06em; }
+.hero-kpi-intro { margin: 0; color: #68766a; font-size: .92rem; line-height: 1.45; }
+.hero-kpi-list { display: grid; gap: 8px; padding: 0; margin: 20px 0 0; list-style: none; }
+.hero-kpi-item { display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; gap: 11px; align-items: center; padding: 10px 13px; background: rgba(255,255,255,.72); border: 1px solid rgba(20, 74, 35, .09); border-radius: 13px; }
+.hero-kpi-rank { color: #6d8170; font: .68rem "DM Mono", monospace; letter-spacing: .04em; }
+.hero-kpi-copy { min-width: 0; }
+.hero-kpi-copy strong { display: block; color: #173f24; font-size: .87rem; line-height: 1.25; }
+.hero-kpi-copy span { display: block; margin-top: 2px; color: #6d796e; font-size: .75rem; line-height: 1.35; }
+.hero-kpi-copy p { margin: 3px 0 0; color: #1f6f3a; font-size: .69rem; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; }
+.hero-kpi-score { min-width: 40px; color: #143e24; font-size: 1.6rem; line-height: 1; letter-spacing: -.06em; text-align: right; }
+.coach-summary { margin: 0; color: #617064; font-size: .9rem; line-height: 1.55; }
+
+@media (max-width: 680px) {
+  .hero-kpi-panel h1 { font-size: 1.7rem; }
+  .hero-kpi-item { grid-template-columns: 25px minmax(0, 1fr) auto; gap: 8px; padding: 10px; }
+  .hero-kpi-copy span { font-size: .72rem; }
+  .hero-kpi-score { min-width: 33px; font-size: 1.35rem; }
+}
