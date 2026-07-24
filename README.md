@@ -14,9 +14,9 @@ The application is built for real practice sessions: run it on your computer, up
 - Coach-style feedback with one priority and three detailed observations
 - Optional Gemini-enhanced narrative coaching based on local CV measurements
 - Club-recognition support for Driver, Wood, Hybrid, Iron, and Wedge
-- Optional exact iron/wedge marking recognition after the club head is localized
+- Optional exact iron/wedge marking recognition after five-way classification
 - Windows launcher that creates a virtual environment, installs requirements, and opens the application in the default browser
-- Training notebooks that use one shared club-image dataset for club-head detection and exact club-marking recognition
+- Training notebooks for five-way club classification and exact club-marking recognition
 
 ## Quick start
 
@@ -102,7 +102,7 @@ For the most useful review:
 - Use good lighting and a contrasting background where possible.
 - Keep the camera stable and roughly hip-high.
 - Use a comparable camera angle for each progress check.
-- Center the club head in the frame if club recognition matters.
+- Center the club face or sole in the frame if club recognition matters.
 
 ## KPI reference
 
@@ -125,11 +125,9 @@ These are directional coaching signals, not laboratory-grade biomechanics measur
 
 ## Club recognition and models
 
-SwingSight uses a staged recognition workflow:
+SwingSight classifies the submitted club image with a staged recognition workflow:
 
 ~~~text
-Club-head detection
-       ↓
 Five-way classification: Driver | Wood | Hybrid | Iron | Wedge
        ↓
 Optional exact marking: 1–9, P/A/G/S/L, or a wedge loft
@@ -141,13 +139,12 @@ Expected optional local model files:
 
 ~~~text
 models/
-  club_detector.pt                  # club-head detector
   trained/
     club_type_5way.pt               # driver / wood / hybrid / iron / wedge
     club_marking_cnn.pt             # exact iron/wedge marking
 ~~~
 
-Messages such as **club-head detector unavailable** or **club_marking CNN checkpoint was not found** mean the related optional model has not been added yet. The rest of SwingSight can still analyze the swing, but club identification will be less precise.
+Messages such as **club_type_5way CNN checkpoint was not found** or **club_marking CNN checkpoint was not found** mean the related optional model has not been added yet. The rest of SwingSight can still analyze the swing, but club identification will be less precise.
 
 ## Training club models
 
@@ -165,19 +162,18 @@ data/club_training/
 The manifest uses one row per image:
 
 ~~~text
-image_path,split,five_way_label,head_x,head_y,head_w,head_h,marking_label,mark_x,mark_y,mark_w,mark_h
+image_path,split,five_way_label,marking_label,mark_x,mark_y,mark_w,mark_h
 ~~~
 
 - **image_path:** path relative to data/club_training/images
 - **split:** train or val
 - **five_way_label:** driver, wood, hybrid, iron, or wedge
-- **head_***: normalized club-head bounding box for the detector
 - **marking_***: normalized bounding box around the readable number, letter, or loft
 - **marking_label:** one of 1–9, p/a/g/s/l, or loft labels 50/52/54/56/58/60
 
-Run the notebooks in order:
+Train the models that you need:
 
-1. **notebooks/02_train_club_head_detector.ipynb** creates models/club_detector.pt.
+1. **notebooks/03_train_five_way_club_cnn.ipynb** creates models/trained/club_type_5way_cnn.pt.
 2. **notebooks/03_train_club_marking_cnn.ipynb** crops annotated markings from the shared master images and creates models/trained/club_marking_cnn.pt.
 
 Keep images from a single source capture in one split only. Otherwise, nearly identical images can appear in both training and validation, which gives misleadingly strong results.
@@ -193,7 +189,7 @@ Use config.example.yaml as the reference for model paths, thresholds, processing
 | Maximum video duration | 12 seconds |
 | Pose backend | MediaPipe |
 | Gemini environment variable | GEMINI_API_KEY |
-| Club detector path | models/club_detector.pt |
+| Five-way club model path | models/trained/club_type_5way.pt |
 
 For example, run a development server on a different port:
 

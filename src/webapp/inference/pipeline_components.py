@@ -6,12 +6,13 @@ from typing import Dict, List, Optional
 import numpy as np
 import pandas as pd
 
-from swingsight.club_detection import CLUB_CATEGORIES
 from swingsight.club_recognition import predicted_to_category, recognize_club_from_frame
 from swingsight.feedback import generate_feedback_sections
 from swingsight.metrics import compute_swing_metrics
 from swingsight.pose_estimation import run_pose_estimation
 from swingsight.visualization import render_annotated_video
+
+CLUB_CATEGORIES = ["driver_wood", "hybrid", "iron_wedge"]
 
 
 def _classify_club_recognition(recognition: Dict) -> Dict:
@@ -28,7 +29,7 @@ def _classify_club_recognition(recognition: Dict) -> Dict:
 
 
 def run_club_detection(club_image_path: Optional[str], config: Dict) -> Dict:
-    """Detect club/head region and broad category with YOLOv8-compatible interface."""
+    """Classify a submitted club image with the configured CNN models."""
     if not club_image_path:
         return {"category": CLUB_CATEGORIES[0], "confidence": 0.0, "source": "manual_default"}
 
@@ -38,7 +39,10 @@ def run_club_detection(club_image_path: Optional[str], config: Dict) -> Dict:
         "category": recognition["category"],
         "confidence": float(recognition.get("confidence", 0.0)),
         "bbox": recognition.get("bbox"),
-        "source": recognition.get("sources", {}).get("detector", "club_recognition"),
+        "source": recognition.get("sources", {}).get(
+            "club_type_5way_classifier",
+            recognition.get("sources", {}).get("broad_classifier", "club_recognition"),
+        ),
         "recognition": recognition,
     }
 

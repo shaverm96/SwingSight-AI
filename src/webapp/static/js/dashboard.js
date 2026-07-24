@@ -84,7 +84,7 @@ cancelRecordButton.addEventListener("click", () => {
 async function openRecorder() {
   state.recordedClub = null;
   updateStep("Scan club");
-  recordClubStatus.textContent = "Show the club head to the camera, then tap Scan club & start.";
+  recordClubStatus.textContent = "Show the club face or sole to the camera, then tap Scan club & start.";
   startGuideButton.textContent = "Scan club & start";
   recordPanel.classList.remove("hidden");
   recordPanel.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -101,7 +101,7 @@ async function initCamera() {
     state.mediaStream = stream;
     livePreview.srcObject = stream;
     await livePreview.play();
-    updateStatus("Camera ready — show the club head, then start.");
+    updateStatus("Camera ready — show the club face or sole, then start.");
   } catch (error) {
     console.error("Camera error", error);
     updateStatus("We could not open the camera. You can still upload a video.");
@@ -187,7 +187,7 @@ async function detectClubFromCamera() {
     const club = result.club || result.detected_club;
     if (result.status !== "confirmed" || !club || club === "Not detected") {
       const reason = result.reasoning || "The club was not clear enough to confirm.";
-      recordClubStatus.textContent = `Could not confirm the club. ${reason} Try again with the club head centered in the frame.`;
+      recordClubStatus.textContent = `Could not confirm the club. ${reason} Try again with the club face or sole centered in the frame.`;
       updateStatus("Club scan needs a clearer view.");
       return null;
     }

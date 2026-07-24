@@ -55,7 +55,6 @@ validate_overlay_video = _overlay_generator_module.validate_overlay_video
 
 MODEL_FILE_NAMES = {
     "club_classifier": ["club_classifier.pt", "club_classifier.joblib", "club_classifier.pkl"],
-    "club_detector": ["club_detector.pt"],
     "swing_classifier": ["swing_classifier.pt", "swing_classifier.joblib", "swing_classifier.pkl"],
     "pose_model": ["pose_model.pt", "yolov8n-pose.pt"],
 }
@@ -316,7 +315,7 @@ class ModelManager:
                 record.update({"model": joblib.load(path), "available": True, "loader": "joblib"})
                 return record
             if suffix == ".pt":
-                if YOLO is not None and model_key in {"club_detector", "pose_model"}:
+                if YOLO is not None and model_key == "pose_model":
                     record.update({"model": YOLO(str(path)), "available": True, "loader": "ultralytics"})
                     return record
                 if torch is not None:
@@ -337,12 +336,6 @@ class ModelManager:
             path = self._resolve_model_file(model_key)
             record = self._load_model_artifact(model_key, path)
             self.models[model_key] = record
-
-        club_detector_path = self.models.get("club_detector", {}).get("path")
-        if club_detector_path:
-            self.config.setdefault("club_recognition", {})["yolo_model_path"] = club_detector_path
-        else:
-            self.logger.info("No custom club detector found. Falling back to the built-in club recognition path.")
 
         pose_model_path = self.models.get("pose_model", {}).get("path")
         if pose_model_path:
@@ -540,7 +533,7 @@ class ModelManager:
         return "Needs clearer video"
 
     def _fallback_club_note(self) -> str:
-        return "Club detection needs a closer view of the club head or club end."
+        return "Club recognition needs a clearer view of the club face or sole."
 
     def _image_from_path(self, frame_path: str | Path) -> Image.Image:
         return Image.open(frame_path).convert("RGB")
@@ -719,13 +712,12 @@ class ModelManager:
             "status": "not_detected",
             "bbox": None,
             "reasoning": None,
-            "sources": {"detector": "fallback_default"},
+            "sources": {"club_type_5way_classifier": "fallback_default"},
             "raw": {},
         }
 
         if (
             club_detection.get("club") in {None, "Unknown", "", "Driver", "Iron", "Hybrid", "Wood", "Wedge"}
-            and not self.models.get("club_detector", {}).get("available", False)
             and not self.has_five_way_club_model()
         ):
             club_detection["club"] = "Not detected"
@@ -748,24 +740,23 @@ class ModelManager:
         self.logger.info("Pose model loaded: %s", pose_runtime["loaded"])
         self.logger.info("Pose frames processed: %s", pose_frames_processed)
         self.logger.info("Metrics generated: %s", technical_metrics)
-        self.logger.info("Club detection result: %s", club_detection)
+        self.logger.info("Club recognition result: %s", club_detection)
 
         five_way_model_loaded = self.has_five_way_club_model()
-        club_detector_loaded = bool(self.models.get("club_detector", {}).get("available", False))
         # A downloaded Ultralytics pose model is a valid local analysis model.
         # Missing optional club/custom checkpoints should not suppress pose-based feedback.
         fallback_used = not pose_runtime["loaded"] or pose_frames_detected == 0
 
         model_outputs = {
             "pose_model_loaded": bool(pose_runtime["loaded"]),
-            "club_model_loaded": club_detector_loaded or five_way_model_loaded,
+            "club_model_loaded": five_way_model_loaded,
             "five_way_club_model_loaded": five_way_model_loaded,
             "five_way_club_model_path": str(self.five_way_club_checkpoint) if five_way_model_loaded else None,
             "club_marking_model_loaded": self.has_club_marking_model(),
             "club_marking_model_path": str(self.club_marking_checkpoint) if self.has_club_marking_model() else None,
             "fallback_used": fallback_used,
             "pose_model_source": pose_runtime.get("source"),
-            "club_model_source": "five_way_cnn" if five_way_model_loaded else self.models.get("club_detector", {}).get("loader", "missing"),
+            "club_model_source": "five_way_cnn" if five_way_model_loaded else "missing",
         }
 
         tracking = {

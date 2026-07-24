@@ -117,7 +117,7 @@ class AnalysisService:
         swing_score = coaching.get("swing_score")
         score_label = self._score_label(swing_score, analysis.get("video_processed", False), analysis.get("tracking", {}))
         club_name = analysis.get("club", "Not detected") or "Not detected"
-        club_note = analysis.get("club_note") or ("Club detection needs a closer view of the club head or club end." if club_name == "Not detected" else None)
+        club_note = analysis.get("club_note") or ("Club recognition needs a clearer view of the club face or sole." if club_name == "Not detected" else None)
 
         summary = {
             "analysis_id": analysis_id,

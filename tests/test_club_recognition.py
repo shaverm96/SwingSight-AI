@@ -15,11 +15,6 @@ def _image_path(tmp_path):
 def test_wood_branch_uses_the_wood_type_cnn(monkeypatch, tmp_path):
     monkeypatch.setattr(
         club_recognition,
-        "detect_club_head",
-        lambda image, config: club_recognition.ClubHeadDetection((0, 0, image.width, image.height), 0.8, "yolov8"),
-    )
-    monkeypatch.setattr(
-        club_recognition,
         "classify_broad_category",
         lambda image, config: club_recognition.BroadCategoryResult(
             "wood", 0.9, {"iron": 0.1, "wood": 0.9}, "broad CNN selected wood", "cnn"
@@ -43,11 +38,6 @@ def test_wood_branch_uses_the_wood_type_cnn(monkeypatch, tmp_path):
 
 
 def test_iron_branch_uses_the_marking_cnn(monkeypatch, tmp_path):
-    monkeypatch.setattr(
-        club_recognition,
-        "detect_club_head",
-        lambda image, config: club_recognition.ClubHeadDetection((0, 0, image.width, image.height), 0.9, "yolov8"),
-    )
     monkeypatch.setattr(
         club_recognition,
         "classify_broad_category",
@@ -95,11 +85,6 @@ def test_five_way_club_type_checkpoint_task_is_supported():
 def test_five_way_model_is_preferred_when_configured(monkeypatch, tmp_path):
     monkeypatch.setattr(
         club_recognition,
-        "detect_club_head",
-        lambda image, config: club_recognition.ClubHeadDetection((0, 0, image.width, image.height), 0.8, "yolov8"),
-    )
-    monkeypatch.setattr(
-        club_recognition,
         "classify_five_way_club_type",
         lambda image, config: club_recognition.ClubDetailResult(
             "Driver", 0.91, {"driver": 0.91, "wood": 0.03}, "five-way CNN selected driver", "cnn"
@@ -142,11 +127,6 @@ def test_five_way_checkpoint_is_automatically_resolved_for_the_runtime(tmp_path)
 
 
 def test_five_way_iron_runs_the_separate_marking_cnn(monkeypatch, tmp_path):
-    monkeypatch.setattr(
-        club_recognition,
-        "detect_club_head",
-        lambda image, config: club_recognition.ClubHeadDetection((0, 0, image.width, image.height), 0.8, "yolov8"),
-    )
     monkeypatch.setattr(
         club_recognition,
         "classify_five_way_club_type",

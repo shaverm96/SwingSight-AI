@@ -5,24 +5,11 @@ paths:
   outputs_dir: outputs
   reports_dir: reports
 
-club_detection:
-  enabled: true
-  model_type: yolov8
-  model_path: models/club_detector.pt
-  confidence_threshold: 0.4
-  categories:
-    - driver_wood
-    - hybrid
-    - iron_wedge
-
 pose_estimation:
   backend: mediapipe
   confidence_threshold: 0.5
 
 club_recognition:
-  yolo_model_path: models/club_detector.pt
-  yolo_class_name:
-  detector_confidence_threshold: 0.4
   confirm_threshold: 0.6
   # Preferred live-capture classifier. The checkpoint stores the five class
   # labels: driver, wood, hybrid, iron, and wedge.
@@ -37,7 +24,7 @@ club_recognition:
   broad_cnn_model_path: models/trained/club_broad_cnn.pt
   broad_cnn_min_confidence: 0.55
   # Stage 2 for an iron: class_names 1 through 9.  The model sees the lower
-  # center marking crop from the detected club head.
+  # The marking model uses the center of the submitted club image.
   iron_number_cnn_model_path: models/trained/club_iron_number_cnn.pt
   iron_number_cnn_min_confidence: 0.55
   # Stage 3 for a wood: class_names driver, wood, and hybrid.
