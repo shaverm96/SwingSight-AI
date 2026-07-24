@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}?v=20260723-kpi-cards" />
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}?v=20260723-coach-priority" />
   </head>
   <body>
     <div class="page-shell review-page" data-analysis-id="{{ analysis_id }}">
@@ -39,16 +39,15 @@
             <video id="analysisPreview" controls playsinline preload="auto"></video>
           </article>
           <aside class="coach-card">
-            <div>
+            <div class="coach-priority-intro">
               <p class="eyebrow">Coach’s priority</p>
-              <h2 id="focusTitle">Your next best move</h2>
-              <p id="focusText" class="coach-focus">Loading your next focus…</p>
-              <p id="coachSummary" class="coach-summary">I’m pulling together the clearest next step for this swing.</p>
+              <h2 id="focusTitle">Loading your next best move…</h2>
             </div>
-            <div class="coach-observations">
-              <p class="eyebrow">What I’m seeing</p>
-              <ul id="mediaFeedbackList" class="feedback-list feedback-list--compact"></ul>
-            </div>
+            <section class="coach-observations" aria-labelledby="coachObservationsTitle">
+              <p id="coachObservationsTitle" class="eyebrow">What I’m seeing</p>
+              <div id="coachObservationList" class="coach-observation-list"></div>
+            </section>
+            <p id="coachSummary" class="coach-summary">I’m pulling together the clearest next step for this swing.</p>
           </aside>
         </section>
 
@@ -76,6 +75,6 @@
     </div>
     <div id="overlayModal" class="overlay-modal hidden" aria-hidden="true"><div class="overlay-modal__backdrop"></div><section class="overlay-modal__panel" role="dialog" aria-modal="true" aria-label="Expanded overlay viewer"><div class="overlay-modal__head"><div><p class="eyebrow">Expanded view</p><h2>Overlay viewer</h2></div><button id="closeOverlayModalButton" class="button ghost" type="button">Close</button></div><div class="overlay-modal__toolbar"><div class="toggle-group" role="group" aria-label="Expanded video view toggle"><button id="modalOriginalButton" class="button toggle is-active" type="button">Original</button><button id="modalOverlayButton" class="button toggle" type="button">Overlay</button></div></div><video id="overlayModalPreview" class="overlay-modal__video" controls playsinline preload="auto"></video></section></div>
     <div id="kpiInfoModal" class="kpi-info-modal hidden" aria-hidden="true"><div class="kpi-info-modal__backdrop"></div><section class="kpi-info-modal__panel" role="dialog" aria-modal="true" aria-labelledby="kpiInfoTitle"><div class="kpi-info-modal__head"><div><p class="eyebrow">Swing KPI</p><h2 id="kpiInfoTitle">Metric description</h2></div><button id="closeKpiInfoButton" class="button ghost" type="button">Close</button></div><p id="kpiInfoDescription" class="kpi-info-modal__description"></p><p class="kpi-info-modal__note">This is a side-view, 2D video estimate. Camera angle and framing can affect the reading.</p></section></div>
-    <script src="{{ url_for('static', filename='js/analysis.js') }}?v=20260723-kpi-cards"></script>
+    <script src="{{ url_for('static', filename='js/analysis.js') }}?v=20260723-coach-priority"></script>
   </body>
 </html>
