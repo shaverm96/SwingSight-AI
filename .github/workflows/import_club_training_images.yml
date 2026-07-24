@@ -1,0 +1,66 @@
+name: Import club training image payload
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "tools/club_training_import/payloads/**"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  import-images:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Decode untouched image bytes
+        shell: bash
+        run: |
+          python - <<'PY'
+          from __future__ import annotations
+
+          import base64
+          import hashlib
+          import json
+          from pathlib import Path
+
+          payload_directory = Path("tools/club_training_import/payloads")
+          payload_files = sorted(payload_directory.glob("*.json"))
+          if not payload_files:
+              print("No payload files remain; nothing to import.")
+              raise SystemExit(0)
+
+          for payload_file in payload_files:
+              payload = json.loads(payload_file.read_text(encoding="utf-8"))
+              for entry in payload["files"]:
+                  destination = Path(entry["path"])
+                  raw = base64.b64decode(entry["content_base64"], validate=True)
+                  digest = hashlib.sha256(raw).hexdigest()
+                  if digest != entry["sha256"]:
+                      raise RuntimeError(
+                          f"SHA-256 mismatch for {destination}: {digest} != {entry['sha256']}"
+                      )
+                  destination.parent.mkdir(parents=True, exist_ok=True)
+                  destination.write_bytes(raw)
+                  print(f"Imported {destination} ({len(raw):,} bytes)")
+              payload_file.unlink()
+          PY
+
+      - name: Commit imported images
+        shell: bash
+        run: |
+          if git diff --quiet && git diff --cached --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Add real club training reference images"
+          git push
