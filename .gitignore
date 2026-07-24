@@ -29,9 +29,14 @@ Thumbs.db
 # Local config
 config.yaml
 
-# Data and models (keep README.md)
+# Data and models (keep README.md and reviewed club-training assets)
 data/*
 !data/README.md
+!data/club_training/
+!data/club_training/**
+data/club_training/candidates/
+data/club_training/annotations/candidates.csv
+data/club_training/annotations/approved_manifest.csv
 models/*
 !models/README.md
 !models/trained/
