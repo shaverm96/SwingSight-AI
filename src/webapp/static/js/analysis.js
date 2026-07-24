@@ -16,10 +16,10 @@ const reviewGrade = document.getElementById("reviewGrade");
 const scoreContext = document.getElementById("scoreContext");
 const scoreSource = document.getElementById("scoreSource");
 const coachSummary = document.getElementById("coachSummary");
-const focusText = document.getElementById("focusText");
+const focusTitle = document.getElementById("focusTitle");
+const coachObservationList = document.getElementById("coachObservationList");
 const heroKpiList = document.getElementById("heroKpiList");
 const clubNote = document.getElementById("clubNote");
-const mediaFeedbackList = document.getElementById("mediaFeedbackList");
 const strengthList = document.getElementById("strengthList");
 const improvementList = document.getElementById("improvementList");
 const tipList = document.getElementById("tipList");
@@ -132,14 +132,13 @@ function renderReview(result) {
       ? "Gemini did not score this swing · not enough pose evidence"
       : scoreSource.textContent;
   }
-  coachSummary.textContent = summary || "Your personalized swing feedback is ready.";
-  focusText.textContent = result.next_focus || firstText(detailed.next_focus, detailed.priority) || "Use the feedback below to guide your next practice swing.";
+  coachSummary.textContent = summary || "You’ve got a solid starting point. Take the next move to the range, make a few slow rehearsals, then let it show up in your normal swing.";
+  focusTitle.textContent = result.next_focus || firstText(detailed.next_focus, detailed.priority) || "Use the feedback below to guide your next practice swing.";
   renderHeroKpis(result);
   if (clubNote) {
     clubNote.textContent = result.club_note || firstText(detailed.coach_note, detailed.context) || "";
   }
-  const nearbyFeedback = [...strengths.slice(0, 1), ...improvements.slice(0, 2)];
-  renderList(mediaFeedbackList, nearbyFeedback, "Your coach’s notes will appear beside the video when the review is ready.");
+  renderCoachObservations(coachObservationList, detailed, strengths, improvements, tips);
   renderList(strengthList, strengths, "Your review will highlight the best parts of this swing.");
   renderList(improvementList, improvements, "Your review will identify the highest-value change to make next.");
   renderList(tipList, tips, "Use this space for Gemini practice cues and simple on-course reminders.");
@@ -302,6 +301,39 @@ function renderList(element, items, fallback) {
   });
 }
 
+function renderCoachObservations(element, detailed, strengths, improvements, tips) {
+  if (!element) return;
+
+  const supplied = firstList(detailed.coach_observations, detailed.observations);
+  const fallback = [
+    { title: "What’s working", description: formatItem(strengths[0] || "We’ll call out the strongest move from this swing here.") },
+    { title: "The adjustment to make", description: formatItem(improvements[0] || "Your clearest next adjustment will appear here.") },
+    { title: "Take this feeling to the range", description: formatItem(tips[0] || improvements[1] || "Use a few easy rehearsals before your next ball.") },
+  ];
+  const entries = supplied.length ? supplied : fallback;
+
+  element.innerHTML = "";
+  entries.slice(0, 3).forEach((entry, index) => {
+    const item = typeof entry === "object" && entry !== null ? entry : { description: formatItem(entry) };
+    const card = document.createElement("article");
+    card.className = "coach-observation";
+
+    const title = document.createElement("h3");
+    title.textContent = firstText(
+      item.title,
+      item.heading,
+      item.name,
+      ["What’s working", "The adjustment to make", "Take this feeling to the range"][index]
+    );
+
+    const description = document.createElement("p");
+    description.textContent = firstText(item.description, item.detail, item.text, formatItem(item));
+
+    card.append(title, description);
+    element.appendChild(card);
+  });
+}
+
 function renderDrills(drills, improvements) {
   drillList.innerHTML = "";
   const values = drills.length ? drills : improvements.slice(0, 3).map((item, index) => ({
@@ -391,5 +423,5 @@ async function requestReport(format) {
 function showReviewError(message) {
   reviewStatus.textContent = "Review unavailable";
   coachSummary.textContent = message;
-  focusText.textContent = "Record a new swing to start a fresh review.";
+  focusTitle.textContent = "Record a new swing to start a fresh review.";
 }
