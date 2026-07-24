@@ -138,7 +138,7 @@ function renderReview(result) {
   if (clubNote) {
     clubNote.textContent = result.club_note || firstText(detailed.coach_note, detailed.context) || "";
   }
-  renderCoachObservations(coachObservationList, detailed, strengths, improvements, tips);
+  renderCoachObservations(coachObservationList, detailed, result, strengths, improvements, tips);
   renderList(strengthList, strengths, "Your review will highlight the best parts of this swing.");
   renderList(improvementList, improvements, "Your review will identify the highest-value change to make next.");
   renderList(tipList, tips, "Use this space for Gemini practice cues and simple on-course reminders.");
@@ -301,14 +301,14 @@ function renderList(element, items, fallback) {
   });
 }
 
-function renderCoachObservations(element, detailed, strengths, improvements, tips) {
+function renderCoachObservations(element, detailed, result, strengths, improvements, tips) {
   if (!element) return;
 
-  const supplied = firstList(detailed.coach_observations, detailed.observations);
+  const supplied = firstList(detailed.coach_observations, detailed.observations, result.coach_observations, result.observations);
   const fallback = [
-    { title: "What’s working", description: formatItem(strengths[0] || "We’ll call out the strongest move from this swing here.") },
-    { title: "The adjustment to make", description: formatItem(improvements[0] || "Your clearest next adjustment will appear here.") },
-    { title: "Take this feeling to the range", description: formatItem(tips[0] || improvements[1] || "Use a few easy rehearsals before your next ball.") },
+    { title: coachTitleFromText(strengths[0], 0), description: formatItem(strengths[0] || "We’ll call out the strongest move from this swing here.") },
+    { title: coachTitleFromText(improvements[0], 1), description: formatItem(improvements[0] || "Your clearest next adjustment will appear here.") },
+    { title: coachTitleFromText(tips[0] || improvements[1], 2), description: formatItem(tips[0] || improvements[1] || "Use a few easy rehearsals before your next ball.") },
   ];
   const entries = supplied.length ? supplied : fallback;
 
@@ -323,7 +323,7 @@ function renderCoachObservations(element, detailed, strengths, improvements, tip
       item.title,
       item.heading,
       item.name,
-      ["What’s working", "The adjustment to make", "Take this feeling to the range"][index]
+      coachTitleFromText(item.description || item.detail || item.text, index)
     );
 
     const description = document.createElement("p");
@@ -332,6 +332,19 @@ function renderCoachObservations(element, detailed, strengths, improvements, tip
     card.append(title, description);
     element.appendChild(card);
   });
+}
+
+function coachTitleFromText(value, index) {
+  const note = String(value || "").toLowerCase();
+  if (note.includes("head")) return note.includes("quiet") ? "Keep that quiet head working for you" : "Let your head stay quieter through impact";
+  if (note.includes("knee")) return "Give yourself a more athletic setup";
+  if (note.includes("hip") || note.includes("lower body")) return "Let your lower body lead the way";
+  if (note.includes("shoulder")) return "Finish the shoulder turn";
+  if (note.includes("posture") || note.includes("spine")) return "Stay in your posture a touch longer";
+  if (note.includes("tempo") || note.includes("rhythm")) return "Keep the swing moving in rhythm";
+  if (note.includes("balance") || note.includes("weight")) return "Move through the ball in balance";
+  if (note.includes("path") || note.includes("outside-in") || note.includes("inside-out")) return "Give the club room to swing through";
+  return ["Build around what is working", "The one move to clean up next", "Take this feel to the range"][index] || "Keep building this move";
 }
 
 function renderDrills(drills, improvements) {
