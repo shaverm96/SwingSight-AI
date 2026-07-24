@@ -55,6 +55,14 @@ class CoachingEngine:
             club_note=club_note,
         )
         next_focus = self._choose_next_focus(metrics, improvements, fallback_used=fallback_used)
+        coach_observations = self._build_coach_observations(
+            metrics,
+            strengths=strengths,
+            improvements=improvements,
+            next_focus=next_focus,
+            fallback_used=fallback_used,
+        )
+        coach_summary = self._build_coach_summary(coach_observations, fallback_used=fallback_used)
 
         return {
             "club": club_name,
@@ -62,6 +70,8 @@ class CoachingEngine:
             "strengths": strengths,
             "improvements": improvements,
             "next_focus": next_focus,
+            "coach_observations": coach_observations,
+            "coach_summary": coach_summary,
         }
 
     def _metric(self, metrics: Dict[str, object], *names: str) -> Optional[float]:
@@ -201,6 +211,121 @@ class CoachingEngine:
             improvements.append("Keep repeating that smooth motion—boring practice is where the good golf lives.")
 
         return strengths[:3], improvements[:3]
+
+    def _build_coach_observations(
+        self,
+        metrics: Dict[str, object],
+        *,
+        strengths: Iterable[str],
+        improvements: Iterable[str],
+        next_focus: str,
+        fallback_used: bool,
+    ) -> List[Dict[str, str]]:
+        """Create the three most important, player-facing coaching conversations."""
+
+        if fallback_used:
+            return [
+                {
+                    "title": "Give me a clean side-on view",
+                    "description": "Put your whole body in frame from setup through finish. That gives us a real swing to coach instead of asking the camera to play detective.",
+                },
+                {
+                    "title": "Keep the camera still",
+                    "description": "Set the phone down and leave the zoom alone. A steady picture lets us follow your setup, turn, and finish without guessing.",
+                },
+                {
+                    "title": "Make your normal swing",
+                    "description": "No need to manufacture a perfect one for the camera. Give us your usual motion and we can start finding the moves that will actually help on the course.",
+                },
+            ]
+
+        observations: List[Dict[str, str]] = []
+        head_stability = self._metric(metrics, "head_movement_cm", "head_stability")
+        hip_rotation = self._metric(metrics, "hip_turn_proxy", "hip_rotation")
+        shoulder_rotation = self._metric(metrics, "shoulder_turn_proxy", "shoulder_rotation")
+        spine_angle = self._metric(metrics, "spine_angle_deg", "spine_angle")
+        knee_flex = self._metric(metrics, "knee_flex_deg")
+        balance_score = self._metric(metrics, "balance_score", "weight_shift")
+        tempo_estimate = self._metric(metrics, "tempo_estimate")
+        club_path = str(metrics.get("club_path", "")).lower()
+
+        if knee_flex is not None and knee_flex < 135:
+            observations.append({
+                "title": "Give yourself a more athletic setup",
+                "description": "You are getting a little tall over the ball. Add a soft bend in the knees so your legs can support the turn and help you move into the shot instead of just standing over it.",
+            })
+        if head_stability is not None and head_stability < 80:
+            observations.append({
+                "title": "Let your head stay quieter through impact",
+                "description": "Your head is doing a bit too much traveling as the club comes through. Keep your eyes on the ball and let your chest rotate around that steady center—your strike will have a much better chance to repeat.",
+            })
+        elif head_stability is not None:
+            observations.append({
+                "title": "Keep that quiet head working for you",
+                "description": "Your head stays nicely centered through the swing. That is a great anchor point, so keep building the rest of the motion around that steady base.",
+            })
+        if hip_rotation is not None and hip_rotation < 70:
+            observations.append({
+                "title": "Let your lower body lead the way",
+                "description": "Your hips look a little quiet through the strike. Start the downswing from the ground up and let your belt buckle begin turning toward the target before the arms try to take over.",
+            })
+        elif hip_rotation is not None:
+            observations.append({
+                "title": "Keep clearing space with your hips",
+                "description": "You are getting a good hip turn through the ball. Keep that move going so your arms have room to swing through instead of getting trapped behind you.",
+            })
+        if shoulder_rotation is not None and shoulder_rotation < 70:
+            observations.append({
+                "title": "Finish the shoulder turn",
+                "description": "There is a little more turn available in your upper body. Let your lead shoulder work under your chin on the way back, then keep rotating through so the swing does not run out of room.",
+            })
+        if spine_angle is not None and abs(spine_angle - 10.0) > 8.0:
+            observations.append({
+                "title": "Stay in your posture a touch longer",
+                "description": "Your posture is changing more than we want as the swing moves toward impact. Feel your chest stay over the ball while you rotate—athletic and balanced, not frozen in place.",
+            })
+        if balance_score is not None and balance_score < 70:
+            observations.append({
+                "title": "Move into your lead side with more intent",
+                "description": "Your weight shift needs a little more purpose through the ball. Let your pressure arrive on the lead foot as you turn, then finish tall and balanced like you could hold the pose for a photo.",
+            })
+        if tempo_estimate is not None and tempo_estimate < 70:
+            observations.append({
+                "title": "Take the hurry out of the transition",
+                "description": "The change from backswing to downswing is getting a little quick. Give yourself one smooth beat at the top, then let the lower body start the move before the club chases after it.",
+            })
+        if club_path == "outside_in":
+            observations.append({
+                "title": "Give the club a little more room from the inside",
+                "description": "The club is working across the ball from outside-in. Feel the handle and hands drop closer to your trail pocket first, then swing out toward the target instead of cutting across it.",
+            })
+
+        if len(observations) < 3:
+            for note in [*improvements, *strengths]:
+                if len(observations) == 3:
+                    break
+                observations.append({
+                    "title": "Keep building this move",
+                    "description": str(note),
+                })
+
+        while len(observations) < 3:
+            observations.append({
+                "title": "Trust the rhythm you have",
+                "description": "Keep your setup athletic, let the body turn through the ball, and finish in balance. Good golf does not need to look rushed to be powerful.",
+            })
+
+        return observations[:3]
+
+    def _build_coach_summary(self, observations: Iterable[Dict[str, str]], *, fallback_used: bool) -> str:
+        if fallback_used:
+            return "Give me that clear side view on the next swing, and we can trade camera advice for the good stuff—your actual golf swing."
+
+        notes = list(observations)
+        if not notes:
+            return "You have a useful foundation here. Keep the motion athletic, give the body room to turn, and take one simple feel to the next ball."
+
+        return "You do not need to rebuild the whole swing today. Pick the first move, rehearse it slowly a few times, then let it show up in a normal swing—one good adjustment beats five thoughts over the ball."
 
     def _choose_next_focus(self, metrics: Dict[str, object], improvements: Iterable[str], *, fallback_used: bool) -> str:
         if fallback_used:
