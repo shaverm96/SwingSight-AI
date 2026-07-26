@@ -222,7 +222,7 @@ def test_uncertain_five_way_prediction_yields_to_a_visible_club_loft(monkeypatch
 
     result = club_recognition.recognize_club_from_frame(
         str(_image_path(tmp_path)),
-        {"club_recognition": {"five_way_cnn_model_path": "models/trained/club_type_5way.pt", "confirm_threshold": 0.6}},
+        {"club_recognition": {"five_way_cnn_model_path": "models/trained/club_type_5way.pt", "confirm_threshold": 0.4}},
     )
 
     assert result["status"] == "confirmed"

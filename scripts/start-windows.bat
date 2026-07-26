@@ -44,6 +44,18 @@ if errorlevel 1 (
     exit /b 1
 )
 
+echo Verifying club-number recognition packages...
+"%VENV_PYTHON%" -c "import rapidocr, onnxruntime" >nul 2>&1
+if errorlevel 1 (
+    echo Repairing RapidOCR and ONNX Runtime...
+    "%VENV_PYTHON%" -m pip install --disable-pip-version-check "rapidocr>=3.9.0,<4.0.0" "onnxruntime>=1.20.0"
+    if errorlevel 1 (
+        echo SwingSight could not install the club-number recognition packages.
+        pause
+        exit /b 1
+    )
+)
+
 echo Starting SwingSight...
 "%VENV_PYTHON%" "%SCRIPT_DIR%src\run.py"
 set "EXIT_CODE=%ERRORLEVEL%"

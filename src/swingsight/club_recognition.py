@@ -98,7 +98,7 @@ def recognize_club_from_frame(image_path: str, config: Dict) -> Dict:
         ocr_payload = None
         sources = {"broad_classifier": broad.source}
 
-    confirm_threshold = float(config.get("club_recognition", {}).get("confirm_threshold", 0.6))
+    confirm_threshold = float(config.get("club_recognition", {}).get("confirm_threshold", 0.4))
     confidence = aggregate_hierarchical_confidence(broad.confidence, detail.confidence) if marking and marking.exact_club else broad.confidence
     status = recognition_status(predicted, confidence, confirm_threshold, broad, detail)
     if marking and not marking.exact_club:
@@ -171,7 +171,7 @@ def _five_way_recognition_result(
     """Finish the five-way decision, recovering from an uncertain family with OCR."""
 
     settings = config.get("club_recognition", {})
-    confirm_threshold = float(settings.get("confirm_threshold", 0.6))
+    confirm_threshold = float(settings.get("confirm_threshold", 0.4))
     unavailable_sources = {"cnn_missing", "cnn_unavailable", "cnn_invalid", "cnn_inference_error"}
     family = prediction.club_type
     marking: Optional[ClubMarkingResult] = None
@@ -192,7 +192,9 @@ def _five_way_recognition_result(
     # identify an Iron or Wedge instead of preventing OCR from running.
     if (
         family not in {"Iron", "Wedge"}
-        and prediction.confidence < confirm_threshold
+        and prediction.confidence < float(
+            (settings.get("marking_ocr", {}) or {}).get("fallback_marking_scan_max_family_confidence", 0.6)
+        )
         and bool((settings.get("marking_ocr", {}) or {}).get("fallback_marking_scan_when_family_uncertain", True))
     ):
         marking = classify_club_marking(image, "Unknown", config)

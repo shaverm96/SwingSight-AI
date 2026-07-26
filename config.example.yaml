@@ -10,7 +10,7 @@ pose_estimation:
   confidence_threshold: 0.5
 
 club_recognition:
-  confirm_threshold: 0.6
+  confirm_threshold: 0.4
   # Preferred live-capture classifier. The checkpoint stores the five class
   # labels: driver, wood, hybrid, iron, and wedge.
   five_way_cnn_model_path: models/trained/club_type_5way.pt
@@ -31,6 +31,9 @@ club_recognition:
     # When the broad classifier is uncertain, a high-confidence club number or
     # loft can still identify an Iron or Wedge.
     fallback_marking_scan_when_family_uncertain: true
+    # Keep checking the marking when a non-Iron/Wedge prediction is weak,
+    # even though the broader confirmation threshold is lower.
+    fallback_marking_scan_max_family_confidence: 0.60
     # If the full camera frame still cannot read an Iron/Wedge marking, scan
     # enlarged overlapping tiles. This makes small but visible lofts such as
     # 60 readable without lowering the confidence threshold globally.

@@ -15,7 +15,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "reports_dir": "reports",
     },
     "club_recognition": {
-        "confirm_threshold": 0.6,
+        "confirm_threshold": 0.4,
         "five_way_cnn_model_path": "models/trained/club_type_5way.pt",
         "five_way_cnn_min_confidence": 0.6,
         "marking_ocr": {
@@ -27,6 +27,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
             "sharpen": False,
             "try_sideways_rotations_on_failure": True,
             "fallback_marking_scan_when_family_uncertain": True,
+            "fallback_marking_scan_max_family_confidence": 0.6,
         },
     },
 }

@@ -591,7 +591,7 @@ class ModelManager:
         result = recognize_club_from_frame(str(frame_path), self.config)
         predicted_club = result.get("exact_club") or result.get("club_type") or result.get("predicted_club") or result.get("category")
         confidence = float(result.get("confidence", 0.0))
-        threshold = float(self.config.get("club_recognition", {}).get("confirm_threshold", 0.6))
+        threshold = float(self.config.get("club_recognition", {}).get("confirm_threshold", 0.4))
         if predicted_club == "Unknown" or not predicted_club or confidence < threshold:
             predicted_club = "Not detected"
         return {
