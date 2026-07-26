@@ -15,9 +15,9 @@ club_recognition:
   # labels: driver, wood, hybrid, iron, and wedge.
   five_way_cnn_model_path: models/trained/club_type_5way.pt
   five_way_cnn_min_confidence: 0.60
-  # Stage 2 runs only after five-way detection returns Iron or Wedge. RapidOCR
-  # uses pretrained PP-OCR small models through ONNX Runtime; no club-marking
-  # training images or custom checkpoint are required.
+  # Stage 2 normally runs after five-way detection returns Iron or Wedge.
+  # RapidOCR uses pretrained PP-OCR small models through ONNX Runtime; no
+  # club-marking training images or custom checkpoint are required.
   marking_ocr:
     backend: rapidocr
     min_confidence: 0.70
@@ -28,6 +28,9 @@ club_recognition:
     # RapidOCR handles normal text orientation itself. These two extra passes
     # run only after the original full image has no valid marking.
     try_sideways_rotations_on_failure: true
+    # When the broad classifier is uncertain, a high-confidence club number or
+    # loft can still identify an Iron or Wedge.
+    fallback_marking_scan_when_family_uncertain: true
     # If the full camera frame still cannot read an Iron/Wedge marking, scan
     # enlarged overlapping tiles. This makes small but visible lofts such as
     # 60 readable without lowering the confidence threshold globally.

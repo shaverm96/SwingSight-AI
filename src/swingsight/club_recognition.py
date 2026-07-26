@@ -168,7 +168,7 @@ def _five_way_recognition_result(
     prediction: ClubDetailResult,
     config: Dict,
 ) -> Dict:
-    """Finish the five-way decision and, for irons/wedges, read the club marking."""
+    """Finish the five-way decision, recovering from an uncertain family with OCR."""
 
     settings = config.get("club_recognition", {})
     confirm_threshold = float(settings.get("confirm_threshold", 0.6))
@@ -178,6 +178,7 @@ def _five_way_recognition_result(
     predicted = family
     confidence = prediction.confidence
     ocr_payload = None
+    marking_overrode_family = False
 
     if family in {"Iron", "Wedge"} and prediction.source not in unavailable_sources:
         marking = classify_club_marking(image, family, config)
@@ -186,7 +187,25 @@ def _five_way_recognition_result(
             predicted = marking.exact_club
             confidence = (0.55 * prediction.confidence) + (0.45 * marking.confidence)
 
-    if prediction.source in unavailable_sources:
+    # A live camera frame contains far more than the club. When the broad
+    # classifier is unsure, let a high-confidence visible number or loft
+    # identify an Iron or Wedge instead of preventing OCR from running.
+    if (
+        family not in {"Iron", "Wedge"}
+        and prediction.confidence < confirm_threshold
+        and bool((settings.get("marking_ocr", {}) or {}).get("fallback_marking_scan_when_family_uncertain", True))
+    ):
+        marking = classify_club_marking(image, "Unknown", config)
+        ocr_payload = _ocr_payload(marking)
+        if marking.exact_club:
+            family = _family_from_exact_marking(marking.exact_club)
+            predicted = marking.exact_club
+            confidence = marking.confidence
+            marking_overrode_family = True
+
+    if marking_overrode_family:
+        status = "confirmed"
+    elif prediction.source in unavailable_sources:
         status = "unavailable"
     elif family in {"Iron", "Wedge"} and (marking is None or not marking.exact_club):
         status = "marking_unavailable" if marking and marking.source in _OCR_UNAVAILABLE_SOURCES else "needs_marking"
@@ -207,6 +226,8 @@ def _five_way_recognition_result(
         stage_confidences["club_marking_ocr"] = round(float(marking.confidence), 3)
         probabilities["club_marking_ocr"] = {}
         reasoning.append(marking.reasoning)
+    if marking_overrode_family:
+        reasoning.append("A high-confidence club marking overrode an uncertain broad club prediction.")
 
     return {
         "status": status,
@@ -635,7 +656,7 @@ def _normalize_club_marking_legacy(label: Optional[str], family: str) -> Optiona
 
 
 def normalize_marking_designation(label: Optional[str], family: str) -> Optional[tuple[str, str]]:
-    """Normalize OCR text only when it is valid for the detected club family.
+    """Normalize OCR text only when it is valid for a supported club family.
 
     OCR character substitutions are context-sensitive: ``S`` remains a valid
     sand-wedge mark, but can represent ``5`` when a two-digit loft is read.
@@ -647,6 +668,11 @@ def normalize_marking_designation(label: Optional[str], family: str) -> Optional
     compact = re.sub(r"[^A-Z0-9]", "", str(label).upper())
     if not compact:
         return None
+
+    # This branch is only used when the broad classifier is uncertain. The
+    # accepted text remains limited to known Iron and Wedge markings.
+    if family == "Unknown":
+        return normalize_marking_designation(label, "Wedge") or normalize_marking_designation(label, "Iron")
 
     if family == "Iron":
         compact = compact.replace("IRON", "")
@@ -680,6 +706,12 @@ def normalize_marking_designation(label: Optional[str], family: str) -> Optional
     if re.fullmatch(r"(?:4[6-9]|5[0-9]|6[0-4])", corrected_loft):
         return corrected_loft, f"{corrected_loft}° Wedge"
     return None
+
+
+def _family_from_exact_marking(exact_club: str) -> str:
+    """Return the only valid family for a normalized OCR club marking."""
+
+    return "Iron" if exact_club.endswith(" Iron") else "Wedge"
 
 
 def normalize_club_marking(label: Optional[str], family: str) -> Optional[str]:

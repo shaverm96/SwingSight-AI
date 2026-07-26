@@ -26,6 +26,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
             "contrast_clip_limit": 2.0,
             "sharpen": False,
             "try_sideways_rotations_on_failure": True,
+            "fallback_marking_scan_when_family_uncertain": True,
         },
     },
 }

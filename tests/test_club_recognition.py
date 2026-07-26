@@ -210,6 +210,29 @@ def test_five_way_driver_keeps_current_behavior_and_skips_ocr(monkeypatch, tmp_p
     assert result["ocr"] is None
 
 
+def test_uncertain_five_way_prediction_yields_to_a_visible_club_loft(monkeypatch, tmp_path):
+    """A full live frame can confuse the broad model while OCR still sees the club."""
+
+    monkeypatch.setattr(club_recognition, "classify_five_way_club_type", lambda image, config: _five_way_result("Driver", 0.46))
+    monkeypatch.setattr(
+        club_recognition,
+        "read_marking_candidates",
+        lambda image, config, rotations=(0,): _ocr_result(OcrCandidate("60", 0.996)),
+    )
+
+    result = club_recognition.recognize_club_from_frame(
+        str(_image_path(tmp_path)),
+        {"club_recognition": {"five_way_cnn_model_path": "models/trained/club_type_5way.pt", "confirm_threshold": 0.6}},
+    )
+
+    assert result["status"] == "confirmed"
+    assert result["club_type"] == "Wedge"
+    assert result["club_number"] == "60"
+    assert result["exact_club"].endswith("Wedge")
+    assert result["confidence"] == 0.996
+    assert result["sources"]["club_marking_ocr"] == "rapidocr"
+
+
 def test_five_way_iron_returns_complete_exact_club_payload(monkeypatch, tmp_path):
     monkeypatch.setattr(club_recognition, "classify_five_way_club_type", lambda image, config: _five_way_result("Iron"))
     monkeypatch.setattr(

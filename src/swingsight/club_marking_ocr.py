@@ -2,8 +2,8 @@
 
 The club-type CNN owns the broad Driver/Wood/Hybrid/Iron/Wedge decision.
 This module deliberately has no golf-club training dependency: it uses the
-pretrained PP-OCR models shipped by RapidOCR and ONNX Runtime only after the
-first stage identifies an Iron or Wedge.
+pretrained PP-OCR models shipped by RapidOCR and ONNX Runtime after the first
+stage identifies an Iron or Wedge, or when that stage is uncertain.
 """
 
 from __future__ import annotations
