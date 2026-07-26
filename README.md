@@ -16,7 +16,7 @@ The application is built for real practice sessions: run it on your computer, up
 - Club-recognition support for Driver, Wood, Hybrid, Iron, and Wedge
 - Optional exact iron/wedge marking recognition after five-way classification
 - Windows launcher that creates a virtual environment, installs requirements, and opens the application in the default browser
-- Training notebooks for five-way club classification and exact club-marking recognition
+- Training notebook for five-way club classification; exact Iron/Wedge markings use pretrained OCR
 
 ## Quick start
 
@@ -142,10 +142,11 @@ Required local model/runtime files:
 ~~~text
 models/
   trained/
-    club_type_5way.pt               # driver / wood / hybrid / iron / wedge
+    club_type_5way.pt               # MobileNetV3 five-way classifier
+    club_type_5way_cnn.pt           # compact CNN five-way reference classifier
 ~~~
 
-`rapidocr` and `onnxruntime` are installed by `requirements.txt`. The default backend is RapidOCR with PP-OCR small models; change `club_recognition.marking_ocr.backend` if a compatible replacement reader is added later. The current reader supports Iron numbers `2` through `9`, wedge labels `P/PW`, `A/AW`, `G/GW`, `S/SW`, and `L/LW`, plus recognized lofts from `46` to `64` degrees. It normalizes common OCR swaps such as `S`/`5`, `G`/`6`, `B`/`8`, `O`/`0`, and `I`/`1` only when the result is valid for the detected club family.
+The runtime uses the configured five-way checkpoint and can fall back to the compact `club_type_5way_cnn.pt` reference classifier when available. `rapidocr` and `onnxruntime` are installed by `requirements.txt`. The default backend is RapidOCR with PP-OCR small models; change `club_recognition.marking_ocr.backend` if a compatible replacement reader is added later. The current reader supports Iron numbers `2` through `9`, wedge labels `P/PW`, `A/AW`, `G/GW`, `S/SW`, and `L/LW`, plus recognized lofts from `46` to `64` degrees. It normalizes common OCR swaps such as `S`/`5`, `G`/`6`, `B`/`8`, `O`/`0`, and `I`/`1` only when the result is valid for the detected club family.
 
 The default exact-marking threshold is `0.70` (`club_recognition.marking_ocr.min_confidence`). A reading below that threshold, an invalid label, unavailable OCR runtime, or no text leaves the category as Iron or Wedge and returns `exact_club: null`; the application does not guess. Inspect `club_details` in the analysis response for `club_type`, `club_number`, `exact_club`, OCR confidence, source, and the text box.
 
@@ -195,7 +196,7 @@ Use config.example.yaml as the reference for model paths, thresholds, processing
 | Maximum video duration | 12 seconds |
 | Pose backend | MediaPipe |
 | Gemini environment variable | GEMINI_API_KEY |
-| Five-way club model path | models/trained/club_type_5way.pt |
+| Five-way club model path | `models/trained/club_type_5way.pt` (falls back to `models/trained/club_type_5way_cnn.pt` when available) |
 
 For example, run a development server on a different port:
 
