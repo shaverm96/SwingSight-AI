@@ -1,35 +1,30 @@
 # Models
 
 Most trained weights in this directory remain local and are ignored by Git.
-The two five-way club-type checkpoints below are intentionally versioned so
-the repository includes a usable reference model.
+The five-way club-type checkpoint is versioned so the project includes a
+reference model for the broad club decision.
 
-The club-recognition CNN expects these checkpoint paths by default:
-
-- `trained/club_broad_cnn.pt` — `iron` vs `wood`
-- `trained/club_iron_number_cnn.pt` — `1` through `9`
-- `trained/club_wood_type_cnn.pt` — `driver`, `wood`, or `hybrid`
-
-Five-way club-type checkpoints:
+## Five-way club-type checkpoints
 
 - `trained/club_type_5way.pt` — MobileNetV3-Small checkpoint for `driver`,
-	`wood`, `hybrid`, `iron`, and `wedge`
+  `wood`, `hybrid`, `iron`, and `wedge`
 - `trained/club_type_5way_cnn.pt` — compact custom-CNN baseline for the same
-	five classes
+  five classes
 
-Exact club-marking checkpoint:
+Legacy broad/wood checkpoints are still supported for installations that do
+not use the five-way model:
 
-- `trained/club_marking_cnn.pt` — a separate CNN that runs only after the
-  five-way model selects Iron or Wedge. Its class folders are `1`–`9`,
-  `p/a/g/s/l`, and lofts `50/52/54/56/58/60`; it returns player-facing
-  names such as `7 Iron`, `Pitching Wedge`, and `56° Wedge`.
+- `trained/club_broad_cnn.pt` — `iron` versus `wood`
+- `trained/club_iron_number_cnn.pt` — legacy Iron numbers
+- `trained/club_wood_type_cnn.pt` — `driver`, `wood`, or `hybrid`
 
-Train it with:
+## Exact Iron and Wedge markings
 
-```bash
-python scripts/train_club_cnn.py --task club_marking \\
-  --data-dir data/club_cnn/club_marking \\
-  --output models/trained/club_marking_cnn.pt
-```
+Exact markings do not use a project-trained checkpoint. Once the five-way
+model returns Iron or Wedge, SwingSight invokes pretrained RapidOCR PP-OCR
+models through ONNX Runtime on the full club image. The optional runtime is
+declared in `requirements.txt`; no extra marking weights belong in this folder.
 
-Create them with `scripts/train_club_cnn.py`; each checkpoint stores the required task and class order, and inference validates both before using it.
+The reader accepts only valid Iron numbers, wedge abbreviations, or supported
+wedge lofts after OCR confidence and normalization checks. See the root
+`README.md` and `config.example.yaml` for configuration and failure behavior.

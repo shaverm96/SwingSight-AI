@@ -134,7 +134,7 @@ async function runGuidedCapture() {
     }
   }
   updateStep("Scan club");
-  updateStatus("Checking your club with the club type and marking models…");
+  updateStatus("Checking your club type and, for irons or wedges, its marking with OCR...");
   const clubResult = await detectClubFromCamera();
   if (!clubResult) {
     return;
@@ -142,7 +142,7 @@ async function runGuidedCapture() {
 
   state.recordedClub = clubResult.club;
   const confidence = Number.isFinite(clubResult.confidence) ? ` (${Math.round(clubResult.confidence * 100)}% confidence)` : "";
-  recordClubStatus.textContent = `${clubResult.club} detected${confidence}. Step back so your full body is visible.`;
+  recordClubStatus.textContent = `${clubResult.club} detected${confidence}.${clubResult.note ? ` ${clubResult.note}` : ""} Step back so your full body is visible.`;
   updateStep("Check stance");
   const bodyVisible = await attemptBodyCheck();
   if (!bodyVisible) {
@@ -185,15 +185,18 @@ async function detectClubFromCamera() {
     const response = await postFrame("/api/club-detect");
     const result = response?.result || {};
     const club = result.club || result.detected_club;
-    if (result.status !== "confirmed" || !club || club === "Not detected") {
+    const family = result.club_type || result.raw?.club_type;
+    const exactMarkingUnknown = ["needs_marking", "marking_unavailable"].includes(result.status) && family;
+    if ((!exactMarkingUnknown && result.status !== "confirmed") || !club || club === "Not detected") {
       const reason = result.reasoning || "The club was not clear enough to confirm.";
       recordClubStatus.textContent = `Could not confirm the club. ${reason} Try again with the club face or sole centered in the frame.`;
       updateStatus("Club scan needs a clearer view.");
       return null;
     }
     return {
-      club,
+      club: exactMarkingUnknown ? family : club,
       confidence: Number(result.confidence),
+      note: exactMarkingUnknown ? `Exact ${family.toLowerCase()} marking could not be read; using ${family}.` : "",
     };
   } catch (error) {
     console.error(error);

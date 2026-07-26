@@ -122,6 +122,7 @@ class AnalysisService:
         summary = {
             "analysis_id": analysis_id,
             "club": club_name,
+            "club_details": analysis.get("club_detection", {}),
             "swing_score": swing_score,
             "next_focus": coaching.get("next_focus", "Record from a clear side angle with your full body in frame."),
         }
@@ -136,6 +137,7 @@ class AnalysisService:
             "video_processed": bool(analysis.get("video_processed", False)),
             "club": club_name,
             "club_note": club_note,
+            "club_details": analysis.get("club_detection", {}),
             "swing_score": swing_score,
             "score_label": score_label,
             "score_source": coaching.get("score_source", "local_cv"),

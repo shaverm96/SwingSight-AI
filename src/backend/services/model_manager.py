@@ -14,6 +14,7 @@ import pandas as pd
 from PIL import Image
 import cv2
 
+from swingsight.club_marking_ocr import is_ocr_backend_available
 from swingsight.club_recognition import recognize_club_from_frame
 from swingsight.metrics import compute_swing_metrics
 from swingsight.pose_estimation import run_pose_estimation
@@ -74,8 +75,6 @@ def configure_five_way_club_checkpoint(config: Dict, project_root: Path, trained
     discovered automatically at models/trained/club_type_5way.pt.
     """
     settings = config.setdefault("club_recognition", {})
-    settings.setdefault("club_marking_cnn_model_path", str(trained_models_dir / "club_marking_cnn.pt"))
-    settings.setdefault("club_marking_cnn_min_confidence", 0.6)
     configured_path = settings.get("five_way_cnn_model_path")
     candidates = []
     if configured_path:
@@ -259,11 +258,6 @@ class ModelManager:
             self.project_root,
             self.trained_models_dir,
         )
-        self.club_marking_checkpoint = _to_path(
-            self.config.get("club_recognition", {}).get("club_marking_cnn_model_path"),
-            self.project_root,
-        )
-
         self.models: Dict[str, Dict[str, Any]] = {}
         self.metadata: Dict[str, pd.DataFrame] = {}
         self.experiment_artifacts: Dict[str, Any] = {}
@@ -535,6 +529,16 @@ class ModelManager:
     def _fallback_club_note(self) -> str:
         return "Club recognition needs a clearer view of the club face or sole."
 
+    def _club_detection_note(self, detection: Dict[str, Any]) -> Optional[str]:
+        if detection.get("club") == "Not detected":
+            return self._fallback_club_note()
+
+        raw = detection.get("raw", {}) or {}
+        family = raw.get("club_type") or raw.get("detected_category")
+        if family in {"Iron", "Wedge"} and not raw.get("exact_club"):
+            return raw.get("reasoning") or f"{family} detected, but its exact marking could not be read confidently."
+        return None
+
     def _image_from_path(self, frame_path: str | Path) -> Image.Image:
         return Image.open(frame_path).convert("RGB")
 
@@ -578,13 +582,14 @@ class ModelManager:
     def has_five_way_club_model(self) -> bool:
         return bool(self.five_way_club_checkpoint and self.five_way_club_checkpoint.exists())
 
-    def has_club_marking_model(self) -> bool:
-        return bool(self.club_marking_checkpoint and self.club_marking_checkpoint.exists())
+    def has_club_marking_ocr(self) -> bool:
+        settings = self.config.get("club_recognition", {}).get("marking_ocr", {}) or {}
+        return is_ocr_backend_available(settings)
 
     def detect_club(self, frame: str | Path) -> Dict[str, Any]:
         frame_path = Path(frame)
         result = recognize_club_from_frame(str(frame_path), self.config)
-        predicted_club = result.get("predicted_club") or result.get("category")
+        predicted_club = result.get("exact_club") or result.get("club_type") or result.get("predicted_club") or result.get("category")
         confidence = float(result.get("confidence", 0.0))
         threshold = float(self.config.get("club_recognition", {}).get("confirm_threshold", 0.6))
         if predicted_club == "Unknown" or not predicted_club or confidence < threshold:
@@ -595,6 +600,9 @@ class ModelManager:
             "confidence": confidence,
             "status": result.get("status", "confirmed" if confidence >= threshold else "not_detected"),
             "bbox": result.get("bbox"),
+            "club_type": result.get("club_type") or result.get("detected_category"),
+            "club_number": result.get("club_number"),
+            "exact_club": result.get("exact_club"),
             "reasoning": result.get("reasoning"),
             "sources": result.get("sources", {}),
             "raw": result,
@@ -752,8 +760,8 @@ class ModelManager:
             "club_model_loaded": five_way_model_loaded,
             "five_way_club_model_loaded": five_way_model_loaded,
             "five_way_club_model_path": str(self.five_way_club_checkpoint) if five_way_model_loaded else None,
-            "club_marking_model_loaded": self.has_club_marking_model(),
-            "club_marking_model_path": str(self.club_marking_checkpoint) if self.has_club_marking_model() else None,
+            "club_marking_ocr_available": self.has_club_marking_ocr(),
+            "club_marking_ocr_backend": (self.config.get("club_recognition", {}).get("marking_ocr", {}) or {}).get("backend", "rapidocr"),
             "fallback_used": fallback_used,
             "pose_model_source": pose_runtime.get("source"),
             "club_model_source": "five_way_cnn" if five_way_model_loaded else "missing",
@@ -857,7 +865,7 @@ class ModelManager:
             "video_processed": True,
             "video_metadata": validation,
             "club": club_detection.get("club", "Not detected"),
-            "club_note": self._fallback_club_note() if club_detection.get("club") == "Not detected" else None,
+            "club_note": self._club_detection_note(club_detection),
             "club_detection": club_detection,
             "advanced_metrics": technical_metrics,
             "tracking": tracking,
@@ -897,14 +905,23 @@ class ModelManager:
         club_image_path: Optional[str | Path] = None,
         manual_club_category: Optional[str] = None,
     ) -> Dict[str, Any]:
-        _ = club_image_path
         analysis = self.analyze_pose(video_path)
+        if club_image_path:
+            club_detection = self.detect_club(club_image_path)
+            analysis["club"] = club_detection["club"]
+            analysis["club_detection"] = club_detection
+            analysis["club_note"] = self._club_detection_note(club_detection)
+            if club_detection.get("club") == "Not detected":
+                analysis.setdefault("warnings", []).append(self._fallback_club_note())
         if manual_club_category:
             analysis["club"] = manual_club_category
             analysis["club_detection"] = {
                 **analysis.get("club_detection", {}),
                 "club": manual_club_category,
                 "detected_club": manual_club_category,
+                "club_type": manual_club_category,
+                "club_number": None,
+                "exact_club": None,
                 "status": "confirmed",
             }
             analysis["club_note"] = None

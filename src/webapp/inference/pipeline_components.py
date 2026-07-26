@@ -16,11 +16,13 @@ CLUB_CATEGORIES = ["driver_wood", "hybrid", "iron_wedge"]
 
 
 def _classify_club_recognition(recognition: Dict) -> Dict:
-    detected_category = str(recognition.get("detected_category", "Iron/Wedge"))
+    detected_category = str(recognition.get("club_type") or recognition.get("detected_category", "Unknown"))
     normalized = detected_category.lower()
-    if normalized.startswith("wood"):
+    if normalized in {"driver", "wood"}:
         broad_category = "wood"
-    elif normalized.startswith("iron"):
+    elif normalized == "hybrid":
+        broad_category = "hybrid"
+    elif normalized in {"iron", "wedge"}:
         broad_category = "iron_wedge"
     else:
         broad_category = "unknown"
@@ -29,7 +31,7 @@ def _classify_club_recognition(recognition: Dict) -> Dict:
 
 
 def run_club_detection(club_image_path: Optional[str], config: Dict) -> Dict:
-    """Classify a submitted club image with the configured CNN models."""
+    """Classify a club image and OCR an Iron or Wedge marking when applicable."""
     if not club_image_path:
         return {"category": CLUB_CATEGORIES[0], "confidence": 0.0, "source": "manual_default"}
 
@@ -87,7 +89,7 @@ def check_body_visibility_from_frame(frame_path: str, config: Dict) -> Dict:
 
 
 def classify_club_category(club_image_path: Optional[str], detected_category: str, config: Dict) -> Dict:
-    """Return the staged CNN category and probabilities for a club image."""
+    """Return the club category and probabilities for a submitted club image."""
 
     _ = detected_category  # The stage-one CNN owns the iron/wood decision.
     if not club_image_path:
@@ -106,7 +108,7 @@ def classify_club_category(club_image_path: Optional[str], detected_category: st
 
 
 def recognize_loft_or_number(club_image_path: Optional[str], config: Dict) -> Dict:
-    """Return the number-stage CNN result when the submitted club is an iron."""
+    """Return the pretrained OCR result for an Iron or Wedge marking."""
 
     if not club_image_path:
         return {

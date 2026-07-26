@@ -123,7 +123,7 @@ Status labels are color coded in the dashboard:
 
 These are directional coaching signals, not laboratory-grade biomechanics measurements.
 
-## Club recognition and models
+## Club recognition and exact markings
 
 SwingSight classifies the submitted club image with a staged recognition workflow:
 
@@ -133,20 +133,25 @@ Five-way classification: Driver | Wood | Hybrid | Iron | Wedge
 Optional exact marking: 1–9, P/A/G/S/L, or a wedge loft
 ~~~
 
-The app can complete the swing review even when club recognition is uncertain. It reports the missing capability rather than falsely confirming a club.
+The app first runs the existing five-way classifier. Driver, Wood, and Hybrid keep the existing behavior and never invoke OCR. For an Iron or Wedge, the app passes the complete uploaded image to a pretrained text detector and reader, then accepts only valid golf-club markings.
 
-Expected optional local model files:
+Exact marking recognition uses [RapidOCR](https://github.com/RapidAI/RapidOCR) with its pretrained PP-OCR small models on ONNX Runtime. It was selected instead of a custom club-marking model because it is locally runnable, CPU compatible, and includes text detection as well as recognition. RapidOCR's toolkit is Apache-2.0 licensed; review the bundled PP-OCR model terms before a commercial deployment. The OCR engine loads once per application process. The first pass examines the full image with contrast normalization; only when it cannot find a valid high-confidence marking does it try the two sideways orientations.
+
+Required local model/runtime files:
 
 ~~~text
 models/
   trained/
     club_type_5way.pt               # driver / wood / hybrid / iron / wedge
-    club_marking_cnn.pt             # exact iron/wedge marking
 ~~~
 
-Messages such as **club_type_5way CNN checkpoint was not found** or **club_marking CNN checkpoint was not found** mean the related optional model has not been added yet. The rest of SwingSight can still analyze the swing, but club identification will be less precise.
+`rapidocr` and `onnxruntime` are installed by `requirements.txt`. The default backend is RapidOCR with PP-OCR small models; change `club_recognition.marking_ocr.backend` if a compatible replacement reader is added later. The current reader supports Iron numbers `2` through `9`, wedge labels `P/PW`, `A/AW`, `G/GW`, `S/SW`, and `L/LW`, plus recognized lofts from `46` to `64` degrees. It normalizes common OCR swaps such as `S`/`5`, `G`/`6`, `B`/`8`, `O`/`0`, and `I`/`1` only when the result is valid for the detected club family.
 
-## Training club models
+The default exact-marking threshold is `0.70` (`club_recognition.marking_ocr.min_confidence`). A reading below that threshold, an invalid label, unavailable OCR runtime, or no text leaves the category as Iron or Wedge and returns `exact_club: null`; the application does not guess. Inspect `club_details` in the analysis response for `club_type`, `club_number`, `exact_club`, OCR confidence, source, and the text box.
+
+On a typical CPU, a normal Iron/Wedge scan is one compact OCR pass after the five-way classifier; sideways fallback performs two additional passes only when needed. Tiny, glared, blurred, obscured, decorative, or highly reflective markings can still be unreadable. A centered, well-lit view of the club head or grip butt gives the best result.
+
+## Training the five-way club classifier
 
 The training workflow deliberately keeps one master image library instead of duplicating training images per model.
 
@@ -165,16 +170,17 @@ The manifest uses one row per image:
 image_path,split,five_way_label,marking_label,mark_x,mark_y,mark_w,mark_h
 ~~~
 
+The `marking_*` columns remain for historical experiments; they are not needed for the pretrained OCR path and should not be used to train a replacement marking model for this feature.
+
 - **image_path:** path relative to data/club_training/images
 - **split:** train or val
 - **five_way_label:** driver, wood, hybrid, iron, or wedge
 - **marking_***: normalized bounding box around the readable number, letter, or loft
 - **marking_label:** one of 1–9, p/a/g/s/l, or loft labels 50/52/54/56/58/60
 
-Train the models that you need:
+Train the five-way classifier when the broad club detector needs improvement:
 
 1. **notebooks/03_train_five_way_club_cnn.ipynb** creates models/trained/club_type_5way_cnn.pt.
-2. **notebooks/03_train_club_marking_cnn.ipynb** crops annotated markings from the shared master images and creates models/trained/club_marking_cnn.pt.
 
 Keep images from a single source capture in one split only. Otherwise, nearly identical images can appear in both training and validation, which gives misleadingly strong results.
 
