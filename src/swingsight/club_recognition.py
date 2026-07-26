@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from copy import deepcopy
+import math
 import re
-from typing import Dict, Optional
+from typing import Dict, Iterable, Optional
 
 from PIL import Image
 
@@ -279,7 +281,126 @@ def classify_club_marking(image: Image.Image, family: str, config: Dict) -> Club
         elapsed_ms=first_pass.elapsed_ms + sideways_pass.elapsed_ms,
         attempts=first_pass.attempts + sideways_pass.attempts,
     )
-    return _select_marking_candidate(combined, family, minimum_confidence)
+    result = _select_marking_candidate(combined, family, minimum_confidence)
+    if result.exact_club or combined.source in _OCR_UNAVAILABLE_SOURCES:
+        return result
+
+    tiled_result = _read_marking_from_tiles(image, family, config, ocr_settings, minimum_confidence)
+    return tiled_result if tiled_result and tiled_result.exact_club else result
+
+
+def _read_marking_from_tiles(
+    image: Image.Image,
+    family: str,
+    config: Dict,
+    settings: Dict,
+    minimum_confidence: float,
+) -> Optional[ClubMarkingResult]:
+    """Retry OCR on enlarged overlapping tiles after full-image OCR fails.
+
+    A live camera frame often includes the golfer and the club together, leaving
+    a valid loft such as ``60`` too small for the OCR detector. This bounded
+    fallback keeps the original scan fast and only makes four enlarged tile
+    passes when an Iron or Wedge marking remains unresolved.
+    """
+
+    if not bool(settings.get("fallback_tile_scan_on_failure", True)):
+        return None
+
+    candidates: list[OcrCandidate] = []
+    elapsed_ms = 0.0
+    attempts = 0
+    sources: list[str] = []
+    reasonings: list[Optional[str]] = []
+    tile_config = _tile_ocr_config(config, settings)
+
+    for tile, offset in _iter_marking_tiles(image, settings):
+        tile_read = read_marking_candidates(tile, tile_config, rotations=(0,))
+        elapsed_ms += tile_read.elapsed_ms
+        attempts += tile_read.attempts
+        sources.append(tile_read.source)
+        reasonings.append(tile_read.reasoning)
+        for candidate in tile_read.candidates:
+            candidates.append(
+                OcrCandidate(
+                    text=candidate.text,
+                    confidence=candidate.confidence,
+                    bbox=_offset_bbox(candidate.bbox, offset),
+                    rotation_degrees=candidate.rotation_degrees,
+                )
+            )
+
+    if not candidates and all(source in _OCR_UNAVAILABLE_SOURCES for source in sources):
+        return ClubMarkingResult(
+            designation=None,
+            exact_club=None,
+            raw_text=None,
+            confidence=0.0,
+            bbox=None,
+            reasoning=join_reasoning(reasonings),
+            source=sources[0] if sources else "ocr_unavailable",
+            elapsed_ms=round(elapsed_ms, 1),
+            attempts=attempts,
+        )
+
+    tiled = OcrReadResult(
+        candidates=tuple(candidates),
+        source="rapidocr_tiled" if any(source == "rapidocr" for source in sources) else (sources[0] if sources else "rapidocr_tiled"),
+        reasoning=join_reasoning(reasonings),
+        elapsed_ms=round(elapsed_ms, 1),
+        attempts=attempts,
+    )
+    return _select_marking_candidate(tiled, family, minimum_confidence)
+
+
+def _tile_ocr_config(config: Dict, settings: Dict) -> Dict:
+    tiled_config = deepcopy(config)
+    recognition = tiled_config.setdefault("club_recognition", {})
+    tile_settings = dict(recognition.get("marking_ocr", {}) or {})
+    tile_settings["min_image_side"] = max(1, int(settings.get("fallback_tile_min_side", 1200)))
+    recognition["marking_ocr"] = tile_settings
+    return tiled_config
+
+
+def _iter_marking_tiles(image: Image.Image, settings: Dict) -> Iterable[tuple[Image.Image, tuple[int, int]]]:
+    grid = settings.get("fallback_tile_grid", [2, 2])
+    try:
+        columns = max(1, min(4, int(grid[0])))
+        rows = max(1, min(4, int(grid[1])))
+    except (TypeError, ValueError, IndexError):
+        columns, rows = 2, 2
+    try:
+        overlap = max(0.0, min(0.45, float(settings.get("fallback_tile_overlap", 0.18))))
+    except (TypeError, ValueError):
+        overlap = 0.18
+
+    width, height = image.size
+    tile_width = max(1, math.ceil(width / columns))
+    tile_height = max(1, math.ceil(height / rows))
+
+    for top in _tile_starts(height, tile_height, overlap):
+        for left in _tile_starts(width, tile_width, overlap):
+            right = min(width, left + tile_width)
+            bottom = min(height, top + tile_height)
+            yield image.crop((left, top, right, bottom)), (left, top)
+
+
+def _tile_starts(length: int, tile_length: int, overlap: float) -> list[int]:
+    if tile_length >= length:
+        return [0]
+    step = max(1, int(round(tile_length * (1.0 - overlap))))
+    last = length - tile_length
+    starts = list(range(0, last + 1, step))
+    if starts[-1] != last:
+        starts.append(last)
+    return starts
+
+
+def _offset_bbox(bbox: Optional[list[list[float]]], offset: tuple[int, int]) -> Optional[list[list[float]]]:
+    if bbox is None:
+        return None
+    left, top = offset
+    return [[round(x + left, 2), round(y + top, 2)] for x, y in bbox]
 
 
 def _select_marking_candidate(

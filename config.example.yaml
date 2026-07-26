@@ -28,6 +28,13 @@ club_recognition:
     # RapidOCR handles normal text orientation itself. These two extra passes
     # run only after the original full image has no valid marking.
     try_sideways_rotations_on_failure: true
+    # If the full camera frame still cannot read an Iron/Wedge marking, scan
+    # enlarged overlapping tiles. This makes small but visible lofts such as
+    # 60 readable without lowering the confidence threshold globally.
+    fallback_tile_scan_on_failure: true
+    fallback_tile_grid: [2, 2]
+    fallback_tile_overlap: 0.18
+    fallback_tile_min_side: 1200
   # Legacy fallback for an Iron-only numbers checkpoint.
   # Stage 1: class_names must be iron and wood (or one of the documented aliases).
   broad_cnn_model_path: models/trained/club_broad_cnn.pt

@@ -113,11 +113,12 @@ def read_marking_candidates(
         prepared = _rotate_image(original, normalized_rotation)
         try:
             output = engine(prepared)
+            detected_candidates = tuple(_extract_candidates(output))
         except Exception as exc:  # pragma: no cover - defensive boundary around optional model runtime
             failures.append(type(exc).__name__)
             continue
 
-        for candidate in _extract_candidates(output):
+        for candidate in detected_candidates:
             candidates.append(
                 OcrCandidate(
                     text=candidate.text,
@@ -152,9 +153,14 @@ def _prepare_image(image: Image.Image, settings: Dict) -> np.ndarray:
 
     rgb = np.asarray(image.convert("RGB"))
     max_side = max(1, int(settings.get("max_image_side", 1600)))
+    min_side = max(0, int(settings.get("min_image_side", 0) or 0))
     height, width = rgb.shape[:2]
     current_max = max(height, width)
-    if current_max > max_side:
+    if min_side and current_max < min_side:
+        scale = min(max_side / float(current_max), min_side / float(current_max))
+        if scale > 1.0:
+            rgb = cv2.resize(rgb, (round(width * scale), round(height * scale)), interpolation=cv2.INTER_CUBIC)
+    elif current_max > max_side:
         scale = max_side / float(current_max)
         rgb = cv2.resize(rgb, (round(width * scale), round(height * scale)), interpolation=cv2.INTER_AREA)
 
@@ -208,9 +214,13 @@ def _extract_candidates(output: Any) -> Iterable[OcrCandidate]:
 
 
 def _zip_candidates(texts: Iterable[Any], scores: Optional[Iterable[Any]], boxes: Optional[Iterable[Any]]) -> list[OcrCandidate]:
-    text_values = list(texts or ())
-    score_values = list(scores or ())
-    box_values = list(boxes or ())
+    # RapidOCR 3 returns NumPy arrays for scores and boxes.  Using ``value or
+    # ()`` with one of those arrays raises an ambiguous-truth-value error,
+    # which previously stopped a successful OCR response before its candidates
+    # could be evaluated.
+    text_values = list(texts) if texts is not None else []
+    score_values = list(scores) if scores is not None else []
+    box_values = list(boxes) if boxes is not None else []
     return [
         OcrCandidate(
             text=str(text),

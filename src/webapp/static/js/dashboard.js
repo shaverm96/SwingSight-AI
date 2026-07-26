@@ -115,7 +115,10 @@ function stopCamera() {
 }
 
 async function requestCameraStream(deviceId) {
-  const primary = deviceId ? { video: { deviceId: { exact: deviceId } }, audio: false } : { video: true, audio: false };
+  const video = deviceId
+    ? { deviceId: { exact: deviceId }, width: { ideal: 1920 }, height: { ideal: 1080 } }
+    : { width: { ideal: 1920 }, height: { ideal: 1080 } };
+  const primary = { video, audio: false };
   try {
     return await navigator.mediaDevices.getUserMedia(primary);
   } catch (error) {

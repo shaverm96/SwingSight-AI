@@ -145,6 +145,38 @@ def test_sideways_ocr_is_only_tried_after_the_original_image_fails(monkeypatch):
     assert calls == [(0,), (90, 270)]
 
 
+def test_tiled_ocr_fallback_recovers_a_small_wedge_loft(monkeypatch):
+    calls = []
+
+    def reader(image, config, rotations=(0,)):
+        calls.append((image.size, rotations))
+        if image.size == (240, 160):
+            return _ocr_result(OcrCandidate("BRAND", 0.99))
+        return _ocr_result(OcrCandidate("60", 0.94))
+
+    monkeypatch.setattr(club_recognition, "read_marking_candidates", reader)
+
+    result = club_recognition.classify_club_marking(
+        Image.new("RGB", (240, 160)),
+        "Wedge",
+        {
+            "club_recognition": {
+                "marking_ocr": {
+                    "fallback_tile_grid": [2, 2],
+                    "fallback_tile_overlap": 0.0,
+                    "fallback_tile_min_side": 1200,
+                }
+            }
+        },
+    )
+
+    assert result.designation == "60"
+    assert result.exact_club == "60° Wedge"
+    assert result.source == "rapidocr_tiled"
+    assert calls[:2] == [((240, 160), (0,)), ((240, 160), (90, 270))]
+    assert any(size == (120, 80) and rotations == (0,) for size, rotations in calls)
+
+
 def test_no_marking_or_ocr_runtime_does_not_crash(monkeypatch):
     monkeypatch.setattr(
         club_recognition,
