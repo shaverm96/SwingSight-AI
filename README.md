@@ -35,7 +35,8 @@ If it cannot find Python, install a current Python 3 release from [python.org](h
 
 1. Download or clone this repository.
 2. Double-click **SwingSight.app**.
-3. Allow the application if macOS requests permission, then open [http://127.0.0.1:8000](http://127.0.0.1:8000) if needed.
+3. Allow the application if macOS requests permission. It installs or repairs required packages, starts the dashboard, and opens [http://127.0.0.1:8000](http://127.0.0.1:8000) automatically.
+4. If the browser does not open, visit [http://127.0.0.1:8000](http://127.0.0.1:8000) manually.
 
 ### Terminal launch
 
