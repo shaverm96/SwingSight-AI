@@ -9,6 +9,9 @@ const state = {
   analysisProgressAdvanceTimer: null,
 };
 
+const CLUB_SCAN_DELAY_SECONDS = 5;
+const SWING_COUNTDOWN_SECONDS = 3;
+
 const uploadInput = document.getElementById("uploadInput");
 const uploadTrigger = document.getElementById("uploadTrigger");
 const uploadClubSelect = document.getElementById("uploadClubSelect");
@@ -84,8 +87,8 @@ cancelRecordButton.addEventListener("click", () => {
 async function openRecorder() {
   state.recordedClub = null;
   updateStep("Scan club");
-  recordClubStatus.textContent = "Show the club face or sole to the camera, then tap Scan club & start.";
-  startGuideButton.textContent = "Scan club & start";
+  recordClubStatus.textContent = "Show the club face or sole to the camera, then start the five-second club scan.";
+  startGuideButton.textContent = "Start 5-second club scan";
   recordPanel.classList.remove("hidden");
   recordPanel.scrollIntoView({ behavior: "smooth", block: "start" });
   await initCamera();
@@ -137,6 +140,7 @@ async function runGuidedCapture() {
     }
   }
   updateStep("Scan club");
+  await countdownClubScan();
   updateStatus("Checking your club type and, for irons or wedges, its marking with OCR...");
   const clubResult = await detectClubFromCamera();
   if (!clubResult) {
@@ -145,19 +149,13 @@ async function runGuidedCapture() {
 
   state.recordedClub = clubResult.club;
   const confidence = Number.isFinite(clubResult.confidence) ? ` (${Math.round(clubResult.confidence * 100)}% confidence)` : "";
-  recordClubStatus.textContent = `${clubResult.club} detected${confidence}.${clubResult.note ? ` ${clubResult.note}` : ""} Step back so your full body is visible.`;
-  updateStep("Check stance");
-  const bodyVisible = await attemptBodyCheck();
-  if (!bodyVisible) {
-    recordClubStatus.textContent = "Step back so your full body is visible, then try again.";
-    updateStatus("We need a clearer full-body view.");
-    updateStep("Ready");
-    return;
-  }
+  recordClubStatus.textContent = `${clubResult.club} saved${confidence}.${clubResult.note ? ` ${clubResult.note}` : ""} Step back and get set to swing.`;
+  updateStep("Get set");
+  await countdownToSwing();
 
   updateStep("Recording");
-  updateStatus("Ready. Make your swing.");
-  await wait(900);
+  recordClubStatus.textContent = `${clubResult.club} saved. Swing now.`;
+  updateStatus("Swing now.");
   const videoBlob = await recordSwing(5500);
 
   updateStep("Uploading");
@@ -171,16 +169,20 @@ async function runGuidedCapture() {
   });
 }
 
-async function attemptBodyCheck() {
-  for (let attempt = 0; attempt < 8; attempt += 1) {
-    const response = await postFrame("/api/body-check");
-    const check = response.check || response;
-    if (check?.visible) {
-      return true;
-    }
-    await wait(500);
+async function countdownClubScan() {
+  for (let seconds = CLUB_SCAN_DELAY_SECONDS; seconds > 0; seconds -= 1) {
+    recordClubStatus.textContent = `Hold the club face or sole still. Scanning in ${seconds}...`;
+    updateStatus(`Club scan starts in ${seconds}...`);
+    await wait(1000);
   }
-  return false;
+}
+
+async function countdownToSwing() {
+  for (let seconds = SWING_COUNTDOWN_SECONDS; seconds > 0; seconds -= 1) {
+    recordClubStatus.textContent = `${state.recordedClub} saved. Step back and get set — swing in ${seconds}...`;
+    updateStatus(`Club saved. Swing in ${seconds}...`);
+    await wait(1000);
+  }
 }
 
 async function detectClubFromCamera() {

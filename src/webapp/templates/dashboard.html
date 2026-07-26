@@ -49,9 +49,9 @@
         </section>
         <section id="recordPanel" class="record-panel hidden">
           <div class="panel-head"><div><p class="eyebrow">Live capture</p><h2>Set up your swing</h2></div><div id="recordStep" class="step-pill">Step: Ready</div></div>
-          <p id="recordClubStatus" class="record-club-status">Show the sole or face clearly to the camera. We’ll read the club type, number, or loft before recording.</p>
+          <p id="recordClubStatus" class="record-club-status">Show the sole or face clearly to the camera. Five seconds after you start, we’ll save the club type, number, or loft and prompt you to swing.</p>
           <video id="livePreview" muted playsinline></video>
-          <div class="record-actions"><button id="startGuideButton" class="button primary">Scan club &amp; start</button><button id="cancelRecordButton" class="button ghost">Cancel</button></div>
+          <div class="record-actions"><button id="startGuideButton" class="button primary">Start 5-second club scan</button><button id="cancelRecordButton" class="button ghost">Cancel</button></div>
         </section>
       </main>
     </div>
@@ -64,6 +64,6 @@
         <p id="analysisProgressElapsed" class="progress-elapsed">Just getting started</p>
       </section>
     </div>
-    <script src="{{ url_for('static', filename='js/dashboard.js') }}?v=20260722-club-marking"></script>
+    <script src="{{ url_for('static', filename='js/dashboard.js') }}?v=20260726-club-scan"></script>
   </body>
 </html>
