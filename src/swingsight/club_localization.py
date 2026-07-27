@@ -99,66 +99,70 @@ def locate_club_crop(
     frame = np.array(rgb)
     try:
         results = model.predict(frame, verbose=False)
-    except Exception as error:  # pragma: no cover - defensive against runtime backend issues
-        return ClubCropResult(rgb, False, None, f"Pose inference failed ({error}); classifying the full frame.")
+        if not results or results[0].keypoints is None or len(results[0].keypoints) == 0:
+            return ClubCropResult(rgb, False, None, "No person detected; classifying the full frame.")
 
-    if not results or results[0].keypoints is None or len(results[0].keypoints) == 0:
-        return ClubCropResult(rgb, False, None, "No person detected; classifying the full frame.")
+        result = results[0]
+        boxes = result.boxes
+        person_index = int(boxes.conf.argmax().item()) if boxes is not None and len(boxes) > 0 else 0
 
-    result = results[0]
-    boxes = result.boxes
-    person_index = int(boxes.conf.argmax().item()) if boxes is not None and len(boxes) > 0 else 0
+        xy = result.keypoints.xy[person_index].cpu().numpy()
+        conf = result.keypoints.conf[person_index].cpu().numpy() if result.keypoints.conf is not None else None
 
-    xy = result.keypoints.xy[person_index].cpu().numpy()
-    conf = result.keypoints.conf[person_index].cpu().numpy() if result.keypoints.conf is not None else None
+        def confident(index: int) -> bool:
+            return conf is None or conf[index] >= min_keypoint_confidence
 
-    def confident(index: int) -> bool:
-        return conf is None or conf[index] >= min_keypoint_confidence
+        if confident(LEFT_SHOULDER) and confident(RIGHT_SHOULDER):
+            shoulder_width = float(np.linalg.norm(xy[LEFT_SHOULDER] - xy[RIGHT_SHOULDER]))
+        else:
+            shoulder_width = 0.0
+        if shoulder_width <= 1e-3:
+            # Shoulders not visible (tight crop, turned away, etc.) -- fall back to
+            # a fraction of the frame size for the padding floor below.
+            shoulder_width = 0.18 * min(rgb.width, rgb.height)
 
-    if confident(LEFT_SHOULDER) and confident(RIGHT_SHOULDER):
-        shoulder_width = float(np.linalg.norm(xy[LEFT_SHOULDER] - xy[RIGHT_SHOULDER]))
-    else:
-        shoulder_width = 0.0
-    if shoulder_width <= 1e-3:
-        # Shoulders not visible (tight crop, turned away, etc.) -- fall back to
-        # a fraction of the frame size for the padding floor below.
-        shoulder_width = 0.18 * min(rgb.width, rgb.height)
+        # Span the whole shoulder-to-wrist region for both arms rather than just
+        # the wrist midpoint. A club can be held with two hands close together
+        # (address position) or one hand raised to show it to the camera while
+        # the other arm hangs relaxed -- spanning both arms means whichever one
+        # is actually holding the club stays inside the box either way.
+        points = [
+            xy[index]
+            for index in UPPER_BODY_KEYPOINTS
+            if confident(index) and not np.allclose(xy[index], 0)
+        ]
+        if not points:
+            return ClubCropResult(rgb, False, None, "No confident arm keypoints; classifying the full frame.")
 
-    # Span the whole shoulder-to-wrist region for both arms rather than just
-    # the wrist midpoint. A club can be held with two hands close together
-    # (address position) or one hand raised to show it to the camera while
-    # the other arm hangs relaxed -- spanning both arms means whichever one
-    # is actually holding the club stays inside the box either way.
-    points = [
-        xy[index]
-        for index in UPPER_BODY_KEYPOINTS
-        if confident(index) and not np.allclose(xy[index], 0)
-    ]
-    if not points:
-        return ClubCropResult(rgb, False, None, "No confident arm keypoints; classifying the full frame.")
+        xs = [point[0] for point in points]
+        ys = [point[1] for point in points]
+        box_left, box_right = min(xs), max(xs)
+        box_top, box_bottom = min(ys), max(ys)
+        box_width = max(box_right - box_left, 1.0)
+        box_height = max(box_bottom - box_top, 1.0)
 
-    xs = [point[0] for point in points]
-    ys = [point[1] for point in points]
-    box_left, box_right = min(xs), max(xs)
-    box_top, box_bottom = min(ys), max(ys)
-    box_width = max(box_right - box_left, 1.0)
-    box_height = max(box_bottom - box_top, 1.0)
+        pad_x = max(padding_fraction * box_width, min_padding_scale * shoulder_width)
+        pad_y = max(padding_fraction * box_height, min_padding_scale * shoulder_width)
 
-    pad_x = max(padding_fraction * box_width, min_padding_scale * shoulder_width)
-    pad_y = max(padding_fraction * box_height, min_padding_scale * shoulder_width)
+        left = int(max(0, box_left - pad_x))
+        top = int(max(0, box_top - pad_y))
+        right = int(min(rgb.width, box_right + pad_x))
+        bottom = int(min(rgb.height, box_bottom + pad_y))
 
-    left = int(max(0, box_left - pad_x))
-    top = int(max(0, box_top - pad_y))
-    right = int(min(rgb.width, box_right + pad_x))
-    bottom = int(min(rgb.height, box_bottom + pad_y))
+        if right - left < 16 or bottom - top < 16:
+            return ClubCropResult(rgb, False, None, "Degenerate crop box; classifying the full frame.")
 
-    if right - left < 16 or bottom - top < 16:
-        return ClubCropResult(rgb, False, None, "Degenerate crop box; classifying the full frame.")
-
-    crop = rgb.crop((left, top, right, bottom))
-    return ClubCropResult(
-        crop,
-        True,
-        (left, top, right, bottom),
-        "Cropped around the detected arm/hand region.",
-    )
+        crop = rgb.crop((left, top, right, bottom))
+        return ClubCropResult(
+            crop,
+            True,
+            (left, top, right, bottom),
+            "Cropped around the detected arm/hand region.",
+        )
+    except Exception as error:
+        # This crop is a nice-to-have accuracy boost, not a required step.
+        # Any failure here (unexpected ultralytics/torch output shape, a
+        # keypoint schema mismatch across versions, etc.) must never block
+        # classification -- fall back to the uncropped frame instead of
+        # letting the exception propagate up through detect_club().
+        return ClubCropResult(rgb, False, None, f"Pose-based crop failed ({error}); classifying the full frame.")

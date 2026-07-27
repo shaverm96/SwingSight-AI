@@ -7,7 +7,7 @@ from typing import Dict, Optional
 from PIL import Image
 
 from swingsight.club_cnn import CnnPrediction, classify_image
-from swingsight.club_localization import locate_club_crop
+from swingsight.club_localization import ClubCropResult, locate_club_crop
 from swingsight.club_marking_ocr import OcrCandidate, OcrReadResult, read_marking_candidates
 from swingsight.image_preprocessing import apply_adaptive_contrast_rgb
 
@@ -55,16 +55,21 @@ def recognize_club_from_frame(image_path: str, config: Dict) -> Dict:
     # distribution. This is a heuristic ROI, not a trained club detector --
     # see swingsight.club_localization for details and failure modes.
     localization_settings = config.get("club_localization", {}) or {}
+    crop_result = None
     if bool(localization_settings.get("enabled", True)):
-        crop_result = locate_club_crop(
-            image,
-            model_path=localization_settings.get("pose_model_path", "yolov8n-pose.pt"),
-            min_keypoint_confidence=float(localization_settings.get("min_keypoint_confidence", 0.3)),
-            padding_fraction=float(localization_settings.get("padding_fraction", 0.45)),
-            min_padding_scale=float(localization_settings.get("min_padding_scale", 0.6)),
-        )
-    else:
-        crop_result = None
+        try:
+            crop_result = locate_club_crop(
+                image,
+                model_path=localization_settings.get("pose_model_path", "yolov8n-pose.pt"),
+                min_keypoint_confidence=float(localization_settings.get("min_keypoint_confidence", 0.3)),
+                padding_fraction=float(localization_settings.get("padding_fraction", 0.45)),
+                min_padding_scale=float(localization_settings.get("min_padding_scale", 0.6)),
+            )
+        except Exception as error:
+            # Belt-and-suspenders: locate_club_crop already catches its own
+            # failures, but a crop is never allowed to block classification,
+            # so a second guard here costs nothing.
+            crop_result = ClubCropResult(image, False, None, f"Club localization raised an error ({error}); classifying the full frame.")
     working_image = crop_result.image if crop_result is not None else image
 
     preprocessing = config.get("preprocessing", {}) or {}
