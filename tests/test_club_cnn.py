@@ -6,7 +6,7 @@ import swingsight.club_cnn as club_cnn
 
 
 @pytest.mark.skipif(club_cnn.torch is None, reason="PyTorch is optional")
-def test_resnet101_checkpoint_uses_the_matching_loader(monkeypatch):
+def test_resnet50_checkpoint_uses_the_matching_loader(monkeypatch):
     class FakeModel:
         def __init__(self) -> None:
             self.loaded_state = None
@@ -30,7 +30,7 @@ def test_resnet101_checkpoint_uses_the_matching_loader(monkeypatch):
     checkpoint = {
         "format": club_cnn.CHECKPOINT_FORMAT,
         "task": "club_type_5way",
-        "architecture": "resnet101_v1",
+        "architecture": "resnet50_v1",
         "classifier_dropout": 0.30,
         "class_names": ["driver", "wood", "hybrid", "iron", "wedge"],
         "input_size": 288,
@@ -46,9 +46,9 @@ def test_resnet101_checkpoint_uses_the_matching_loader(monkeypatch):
 
     monkeypatch.setattr(club_cnn, "_torch_load", lambda path: checkpoint)
     monkeypatch.setattr(club_cnn, "_torch_device", lambda: device)
-    monkeypatch.setattr(club_cnn, "build_resnet101", build_resnet)
+    monkeypatch.setattr(club_cnn, "build_resnet50", build_resnet)
 
-    loaded = club_cnn._load_checkpoint.__wrapped__("resnet101.pt", "club_type_5way")
+    loaded = club_cnn._load_checkpoint.__wrapped__("resnet50.pt", "club_type_5way")
 
     assert loaded.model is model
     assert loaded.class_names == ("driver", "wood", "hybrid", "iron", "wedge")
