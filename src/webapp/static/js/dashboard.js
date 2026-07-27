@@ -2,6 +2,10 @@ const state = {
   mediaStream: null,
   selectedCameraId: null,
   recording: false,
+  recordPanelOpen: false,
+  captureSession: 0,
+  activeCaptureRequest: null,
+  activeRecorder: null,
   uploadClub: null,
   recordedClub: null,
   analysisProgressStartedAt: null,
@@ -65,27 +69,40 @@ startGuideButton.addEventListener("click", async () => {
   if (state.recording) {
     return;
   }
+  const captureSession = ++state.captureSession;
   try {
     state.recording = true;
-    await runGuidedCapture();
+    startGuideButton.disabled = true;
+    await runGuidedCapture(captureSession);
   } catch (error) {
+    if (!isCaptureSessionActive(captureSession)) {
+      return;
+    }
     console.error(error);
     hideAnalysisProgress();
     updateStatus(error.message || "We could not finish that swing review. Please try again.");
   } finally {
-    state.recording = false;
+    if (state.captureSession === captureSession) {
+      state.recording = false;
+      startGuideButton.disabled = false;
+    }
   }
 });
 
 cancelRecordButton.addEventListener("click", () => {
+  cancelGuidedCapture();
   stopCamera();
+  state.recordPanelOpen = false;
   recordPanel.classList.add("hidden");
+  startGuideButton.disabled = false;
   updateStatus("Ready when you are");
   updateStep("Ready");
 });
 
 async function openRecorder() {
   state.recordedClub = null;
+  state.recordPanelOpen = true;
+  startGuideButton.disabled = false;
   updateStep("Scan club");
   recordClubStatus.textContent = "Show the club face or sole to the camera, then start the five-second club scan.";
   startGuideButton.textContent = "Start 5-second club scan";
@@ -100,6 +117,10 @@ async function initCamera() {
       return;
     }
     const stream = await requestCameraStream(state.selectedCameraId);
+    if (!state.recordPanelOpen) {
+      stream.getTracks().forEach((track) => track.stop());
+      return;
+    }
     state.selectedCameraId = stream.getVideoTracks()[0]?.getSettings?.().deviceId || state.selectedCameraId;
     state.mediaStream = stream;
     livePreview.srcObject = stream;
@@ -117,6 +138,21 @@ function stopCamera() {
   livePreview.srcObject = null;
 }
 
+function isCaptureSessionActive(captureSession) {
+  return state.recording && state.recordPanelOpen && state.captureSession === captureSession;
+}
+
+function cancelGuidedCapture() {
+  state.captureSession += 1;
+  state.recording = false;
+  state.activeCaptureRequest?.abort();
+  state.activeCaptureRequest = null;
+  if (state.activeRecorder && state.activeRecorder.state !== "inactive") {
+    state.activeRecorder.stop();
+  }
+  state.activeRecorder = null;
+}
+
 async function requestCameraStream(deviceId) {
   const video = deviceId
     ? { deviceId: { exact: deviceId }, width: { ideal: 1920 }, height: { ideal: 1080 } }
@@ -132,18 +168,23 @@ async function requestCameraStream(deviceId) {
   }
 }
 
-async function runGuidedCapture() {
+async function runGuidedCapture(captureSession) {
+  if (!isCaptureSessionActive(captureSession)) {
+    return;
+  }
   if (!state.mediaStream) {
     await initCamera();
-    if (!state.mediaStream) {
+    if (!isCaptureSessionActive(captureSession) || !state.mediaStream) {
       return;
     }
   }
   updateStep("Scan club");
-  await countdownClubScan();
+  if (!(await countdownClubScan(captureSession))) {
+    return;
+  }
   updateStatus("Checking your club type and, for irons or wedges, its marking with OCR...");
-  const clubResult = await detectClubFromCamera();
-  if (!clubResult) {
+  const clubResult = await detectClubFromCamera(captureSession);
+  if (!isCaptureSessionActive(captureSession) || !clubResult) {
     return;
   }
 
@@ -151,12 +192,17 @@ async function runGuidedCapture() {
   const confidence = Number.isFinite(clubResult.confidence) ? ` (${Math.round(clubResult.confidence * 100)}% confidence)` : "";
   recordClubStatus.textContent = `${clubResult.club} saved${confidence}.${clubResult.note ? ` ${clubResult.note}` : ""} Step back and get set to swing.`;
   updateStep("Get set");
-  await countdownToSwing();
+  if (!(await countdownToSwing(captureSession))) {
+    return;
+  }
 
   updateStep("Recording");
   recordClubStatus.textContent = `${clubResult.club} saved. Swing now.`;
   updateStatus("Swing now.");
-  const videoBlob = await recordSwing(5500);
+  const videoBlob = await recordSwing(5500, captureSession);
+  if (!isCaptureSessionActive(captureSession) || !videoBlob) {
+    return;
+  }
 
   updateStep("Uploading");
   showAnalysisProgress("upload");
@@ -169,25 +215,36 @@ async function runGuidedCapture() {
   });
 }
 
-async function countdownClubScan() {
+async function countdownClubScan(captureSession) {
   for (let seconds = CLUB_SCAN_DELAY_SECONDS; seconds > 0; seconds -= 1) {
+    if (!isCaptureSessionActive(captureSession)) {
+      return false;
+    }
     recordClubStatus.textContent = `Hold the club face or sole still. Scanning in ${seconds}...`;
     updateStatus(`Club scan starts in ${seconds}...`);
     await wait(1000);
   }
+  return isCaptureSessionActive(captureSession);
 }
 
-async function countdownToSwing() {
+async function countdownToSwing(captureSession) {
   for (let seconds = SWING_COUNTDOWN_SECONDS; seconds > 0; seconds -= 1) {
+    if (!isCaptureSessionActive(captureSession)) {
+      return false;
+    }
     recordClubStatus.textContent = `${state.recordedClub} saved. Step back and get set — swing in ${seconds}...`;
     updateStatus(`Club saved. Swing in ${seconds}...`);
     await wait(1000);
   }
+  return isCaptureSessionActive(captureSession);
 }
 
-async function detectClubFromCamera() {
+async function detectClubFromCamera(captureSession) {
   try {
-    const response = await postFrame("/api/club-detect");
+    const response = await postFrame("/api/club-detect", captureSession);
+    if (!isCaptureSessionActive(captureSession)) {
+      return null;
+    }
     const result = response?.result || {};
     const club = result.club || result.detected_club;
     const family = result.club_type || result.raw?.club_type;
@@ -204,6 +261,9 @@ async function detectClubFromCamera() {
       note: exactMarkingUnknown ? `Exact ${family.toLowerCase()} marking could not be read; using ${family}.` : "",
     };
   } catch (error) {
+    if (!isCaptureSessionActive(captureSession)) {
+      return null;
+    }
     console.error(error);
     recordClubStatus.textContent = "Club scan is unavailable. Check that the club model is installed, then try again.";
     updateStatus("Club scan is unavailable.");
@@ -211,16 +271,30 @@ async function detectClubFromCamera() {
   }
 }
 
-async function postFrame(endpoint) {
+async function postFrame(endpoint, captureSession) {
   const blob = await captureFrameBlob();
+  if (!isCaptureSessionActive(captureSession)) {
+    throw new Error("Club scan was cancelled.");
+  }
+  if (!blob) {
+    throw new Error("Could not capture a camera frame.");
+  }
   const formData = new FormData();
   formData.append("frame", blob, "frame.png");
-  const response = await fetch(endpoint, { method: "POST", body: formData });
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw new Error(payload.error || "Camera check failed.");
+  const controller = new AbortController();
+  state.activeCaptureRequest = controller;
+  try {
+    const response = await fetch(endpoint, { method: "POST", body: formData, signal: controller.signal });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(payload.error || "Camera check failed.");
+    }
+    return payload;
+  } finally {
+    if (state.activeCaptureRequest === controller) {
+      state.activeCaptureRequest = null;
+    }
   }
-  return payload;
 }
 
 async function captureFrameBlob() {
@@ -233,19 +307,35 @@ async function captureFrameBlob() {
   return new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
 }
 
-async function recordSwing(durationMs) {
-  if (!state.mediaStream) {
+async function recordSwing(durationMs, captureSession) {
+  if (!isCaptureSessionActive(captureSession) || !state.mediaStream) {
     throw new Error("No camera stream available.");
   }
   const mimeType = MediaRecorder.isTypeSupported("video/webm;codecs=vp9") ? "video/webm;codecs=vp9" : "video/webm";
   const recorder = new MediaRecorder(state.mediaStream, { mimeType });
   const chunks = [];
   recorder.ondataavailable = (event) => chunks.push(event.data);
-  recorder.start();
-  await wait(durationMs);
-  recorder.stop();
-  await new Promise((resolve) => { recorder.onstop = resolve; });
-  return new Blob(chunks, { type: mimeType });
+  state.activeRecorder = recorder;
+  const videoBlob = await new Promise((resolve) => {
+    const stopTimer = window.setTimeout(() => {
+      if (recorder.state !== "inactive") {
+        recorder.stop();
+      }
+    }, durationMs);
+    recorder.onstop = () => {
+      window.clearTimeout(stopTimer);
+      resolve(new Blob(chunks, { type: mimeType }));
+    };
+    recorder.onerror = () => {
+      window.clearTimeout(stopTimer);
+      resolve(null);
+    };
+    recorder.start();
+  });
+  if (state.activeRecorder === recorder) {
+    state.activeRecorder = null;
+  }
+  return isCaptureSessionActive(captureSession) ? videoBlob : null;
 }
 
 async function uploadRecordedSwing(blob) {
