@@ -33,6 +33,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
             "backend": "rapidocr",
             "min_confidence": 0.7,
             "max_image_side": 1600,
+            "min_image_side": 900,
             "enhance_contrast": True,
             "contrast_clip_limit": 2.0,
             "sharpen": False,

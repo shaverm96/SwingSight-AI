@@ -151,12 +151,23 @@ def _prepare_image(image: Image.Image, settings: Dict) -> np.ndarray:
     """Apply a small, deterministic preprocessing step without cropping."""
 
     rgb = np.asarray(image.convert("RGB"))
-    max_side = max(1, int(settings.get("max_image_side", 1600)))
     height, width = rgb.shape[:2]
     current_max = max(height, width)
+
+    max_side = max(1, int(settings.get("max_image_side", 1600)))
+    min_side = max(1, int(settings.get("min_image_side", 900)))
     if current_max > max_side:
         scale = max_side / float(current_max)
         rgb = cv2.resize(rgb, (round(width * scale), round(height * scale)), interpolation=cv2.INTER_AREA)
+    elif current_max < min_side:
+        # The image handed to OCR is the same crop used for club-type
+        # classification (the golfer's arms/hands region), not a crop sized
+        # for marking legibility, so a small loft/number marking can be only
+        # a few pixels tall at native resolution -- too small for RapidOCR's
+        # text detector to find at all. Upscale modest crops before OCR
+        # (same region, more pixels) instead of only ever downscaling.
+        scale = min_side / float(current_max)
+        rgb = cv2.resize(rgb, (round(width * scale), round(height * scale)), interpolation=cv2.INTER_CUBIC)
 
     if not bool(settings.get("enhance_contrast", True)):
         return rgb

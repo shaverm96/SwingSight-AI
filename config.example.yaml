@@ -36,6 +36,9 @@ club_recognition:
     backend: rapidocr
     min_confidence: 0.70
     max_image_side: 1600
+    # Upscale small crops before OCR so a small marking still has enough
+    # pixel height for RapidOCR's text detector to find it.
+    min_image_side: 900
     enhance_contrast: true
     contrast_clip_limit: 2.0
     sharpen: false
