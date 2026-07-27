@@ -26,9 +26,9 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "min_padding_scale": 0.6,
     },
     "club_recognition": {
-        "confirm_threshold": 0.6,
+        "confirm_threshold": 0.45,
         "five_way_cnn_model_path": "models/trained/club_type_5way.pt",
-        "five_way_cnn_min_confidence": 0.6,
+        "five_way_cnn_min_confidence": 0.45,
         "marking_ocr": {
             "backend": "rapidocr",
             "min_confidence": 0.7,
