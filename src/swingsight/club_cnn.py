@@ -25,9 +25,10 @@ except Exception:  # pragma: no cover - exercised only in minimal installations
     nn = None
 
 try:
-    from torchvision.models import mobilenet_v3_small
+    from torchvision.models import mobilenet_v3_small, resnet101
 except Exception:  # pragma: no cover - exercised only in minimal installations
     mobilenet_v3_small = None
+    resnet101 = None
 
 
 CHECKPOINT_FORMAT = "swingsight_club_cnn_v1"
@@ -98,6 +99,23 @@ def build_mobilenet_v3_small(num_classes: int) -> Any:
         raise RuntimeError("PyTorch and torchvision are required for MobileNetV3-Small.")
     model = mobilenet_v3_small(weights=None)
     model.classifier[-1] = nn.Linear(model.classifier[-1].in_features, num_classes)
+    return model
+
+
+def build_resnet101(num_classes: int, *, classifier_dropout: float = 0.30) -> Any:
+    """Build the checkpoint-compatible ResNet-101 classifier.
+
+    The dropout-plus-linear head must stay aligned with the training notebook
+    so a retrained five-way checkpoint can be loaded with strict validation.
+    """
+
+    if torch is None or nn is None or resnet101 is None:
+        raise RuntimeError("PyTorch and torchvision are required for ResNet-101.")
+    model = resnet101(weights=None)
+    model.fc = nn.Sequential(
+        nn.Dropout(p=float(classifier_dropout)),
+        nn.Linear(model.fc.in_features, num_classes),
+    )
     return model
 
 
@@ -232,6 +250,11 @@ def _load_checkpoint(path_string: str, expected_task: str) -> _LoadedCheckpoint:
     architecture = checkpoint.get("architecture", "club_cnn_small_v1")
     if architecture == "mobilenet_v3_small_v1":
         model = build_mobilenet_v3_small(len(class_names))
+    elif architecture == "resnet101_v1":
+        model = build_resnet101(
+            len(class_names),
+            classifier_dropout=float(checkpoint.get("classifier_dropout", 0.30)),
+        )
     elif architecture == "club_cnn_small_v1":
         model = ClubCnnModel(len(class_names))
     else:

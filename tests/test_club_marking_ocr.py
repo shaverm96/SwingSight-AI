@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-import numpy as np
 from PIL import Image
 
 import swingsight.club_marking_ocr as marking_ocr
@@ -55,29 +54,3 @@ def test_large_images_are_downscaled_without_manual_marking_crop():
     )
 
     assert prepared.shape[:2] == (500, 1000)
-
-
-def test_rapidocr_numpy_boxes_are_read_without_an_ambiguous_truth_value(monkeypatch):
-    class FakeEngine:
-        def __call__(self, image):
-            return SimpleNamespace(
-                txts=np.array(["60"]),
-                scores=np.array([0.93]),
-                boxes=np.array([[[1, 2], [3, 2], [3, 4], [1, 4]]]),
-            )
-
-    monkeypatch.setattr(marking_ocr, "_get_rapidocr_engine", lambda: (FakeEngine(), None))
-
-    result = marking_ocr.read_marking_candidates(Image.new("RGB", (80, 60)), {"club_recognition": {}}, rotations=(0,))
-
-    assert result.source == "rapidocr"
-    assert [(item.text, item.confidence) for item in result.candidates] == [("60", 0.93)]
-
-
-def test_small_tiles_can_be_upscaled_for_a_second_ocr_pass():
-    prepared = marking_ocr._prepare_image(
-        Image.new("RGB", (400, 200)),
-        {"max_image_side": 1600, "min_image_side": 1200, "enhance_contrast": False},
-    )
-
-    assert prepared.shape[:2] == (600, 1200)

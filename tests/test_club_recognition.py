@@ -145,38 +145,6 @@ def test_sideways_ocr_is_only_tried_after_the_original_image_fails(monkeypatch):
     assert calls == [(0,), (90, 270)]
 
 
-def test_tiled_ocr_fallback_recovers_a_small_wedge_loft(monkeypatch):
-    calls = []
-
-    def reader(image, config, rotations=(0,)):
-        calls.append((image.size, rotations))
-        if image.size == (240, 160):
-            return _ocr_result(OcrCandidate("BRAND", 0.99))
-        return _ocr_result(OcrCandidate("60", 0.94))
-
-    monkeypatch.setattr(club_recognition, "read_marking_candidates", reader)
-
-    result = club_recognition.classify_club_marking(
-        Image.new("RGB", (240, 160)),
-        "Wedge",
-        {
-            "club_recognition": {
-                "marking_ocr": {
-                    "fallback_tile_grid": [2, 2],
-                    "fallback_tile_overlap": 0.0,
-                    "fallback_tile_min_side": 1200,
-                }
-            }
-        },
-    )
-
-    assert result.designation == "60"
-    assert result.exact_club == "60° Wedge"
-    assert result.source == "rapidocr_tiled"
-    assert calls[:2] == [((240, 160), (0,)), ((240, 160), (90, 270))]
-    assert any(size == (120, 80) and rotations == (0,) for size, rotations in calls)
-
-
 def test_no_marking_or_ocr_runtime_does_not_crash(monkeypatch):
     monkeypatch.setattr(
         club_recognition,
@@ -208,29 +176,6 @@ def test_five_way_driver_keeps_current_behavior_and_skips_ocr(monkeypatch, tmp_p
     assert result["club_type"] == "Driver"
     assert result["predicted_club"] == "Driver"
     assert result["ocr"] is None
-
-
-def test_uncertain_five_way_prediction_yields_to_a_visible_club_loft(monkeypatch, tmp_path):
-    """A full live frame can confuse the broad model while OCR still sees the club."""
-
-    monkeypatch.setattr(club_recognition, "classify_five_way_club_type", lambda image, config: _five_way_result("Driver", 0.46))
-    monkeypatch.setattr(
-        club_recognition,
-        "read_marking_candidates",
-        lambda image, config, rotations=(0,): _ocr_result(OcrCandidate("60", 0.996)),
-    )
-
-    result = club_recognition.recognize_club_from_frame(
-        str(_image_path(tmp_path)),
-        {"club_recognition": {"five_way_cnn_model_path": "models/trained/club_type_5way.pt", "confirm_threshold": 0.4}},
-    )
-
-    assert result["status"] == "confirmed"
-    assert result["club_type"] == "Wedge"
-    assert result["club_number"] == "60"
-    assert result["exact_club"].endswith("Wedge")
-    assert result["confidence"] == 0.996
-    assert result["sources"]["club_marking_ocr"] == "rapidocr"
 
 
 def test_five_way_iron_returns_complete_exact_club_payload(monkeypatch, tmp_path):

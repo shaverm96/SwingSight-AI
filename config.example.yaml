@@ -10,14 +10,14 @@ pose_estimation:
   confidence_threshold: 0.5
 
 club_recognition:
-  confirm_threshold: 0.4
+  confirm_threshold: 0.6
   # Preferred live-capture classifier. The checkpoint stores the five class
   # labels: driver, wood, hybrid, iron, and wedge.
   five_way_cnn_model_path: models/trained/club_type_5way.pt
   five_way_cnn_min_confidence: 0.60
-  # Stage 2 normally runs after five-way detection returns Iron or Wedge.
-  # RapidOCR uses pretrained PP-OCR small models through ONNX Runtime; no
-  # club-marking training images or custom checkpoint are required.
+  # Stage 2 runs only after five-way detection returns Iron or Wedge. RapidOCR
+  # uses pretrained PP-OCR small models through ONNX Runtime; no club-marking
+  # training images or custom checkpoint are required.
   marking_ocr:
     backend: rapidocr
     min_confidence: 0.70
@@ -28,19 +28,6 @@ club_recognition:
     # RapidOCR handles normal text orientation itself. These two extra passes
     # run only after the original full image has no valid marking.
     try_sideways_rotations_on_failure: true
-    # When the broad classifier is uncertain, a high-confidence club number or
-    # loft can still identify an Iron or Wedge.
-    fallback_marking_scan_when_family_uncertain: true
-    # Keep checking the marking when a non-Iron/Wedge prediction is weak,
-    # even though the broader confirmation threshold is lower.
-    fallback_marking_scan_max_family_confidence: 0.60
-    # If the full camera frame still cannot read an Iron/Wedge marking, scan
-    # enlarged overlapping tiles. This makes small but visible lofts such as
-    # 60 readable without lowering the confidence threshold globally.
-    fallback_tile_scan_on_failure: true
-    fallback_tile_grid: [2, 2]
-    fallback_tile_overlap: 0.18
-    fallback_tile_min_side: 1200
   # Legacy fallback for an Iron-only numbers checkpoint.
   # Stage 1: class_names must be iron and wood (or one of the documented aliases).
   broad_cnn_model_path: models/trained/club_broad_cnn.pt

@@ -1,10 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from copy import deepcopy
-import math
 import re
-from typing import Dict, Iterable, Optional
+from typing import Dict, Optional
 
 from PIL import Image
 
@@ -98,7 +96,7 @@ def recognize_club_from_frame(image_path: str, config: Dict) -> Dict:
         ocr_payload = None
         sources = {"broad_classifier": broad.source}
 
-    confirm_threshold = float(config.get("club_recognition", {}).get("confirm_threshold", 0.4))
+    confirm_threshold = float(config.get("club_recognition", {}).get("confirm_threshold", 0.6))
     confidence = aggregate_hierarchical_confidence(broad.confidence, detail.confidence) if marking and marking.exact_club else broad.confidence
     status = recognition_status(predicted, confidence, confirm_threshold, broad, detail)
     if marking and not marking.exact_club:
@@ -168,17 +166,16 @@ def _five_way_recognition_result(
     prediction: ClubDetailResult,
     config: Dict,
 ) -> Dict:
-    """Finish the five-way decision, recovering from an uncertain family with OCR."""
+    """Finish the five-way decision and, for irons/wedges, read the club marking."""
 
     settings = config.get("club_recognition", {})
-    confirm_threshold = float(settings.get("confirm_threshold", 0.4))
+    confirm_threshold = float(settings.get("confirm_threshold", 0.6))
     unavailable_sources = {"cnn_missing", "cnn_unavailable", "cnn_invalid", "cnn_inference_error"}
     family = prediction.club_type
     marking: Optional[ClubMarkingResult] = None
     predicted = family
     confidence = prediction.confidence
     ocr_payload = None
-    marking_overrode_family = False
 
     if family in {"Iron", "Wedge"} and prediction.source not in unavailable_sources:
         marking = classify_club_marking(image, family, config)
@@ -187,27 +184,7 @@ def _five_way_recognition_result(
             predicted = marking.exact_club
             confidence = (0.55 * prediction.confidence) + (0.45 * marking.confidence)
 
-    # A live camera frame contains far more than the club. When the broad
-    # classifier is unsure, let a high-confidence visible number or loft
-    # identify an Iron or Wedge instead of preventing OCR from running.
-    if (
-        family not in {"Iron", "Wedge"}
-        and prediction.confidence < float(
-            (settings.get("marking_ocr", {}) or {}).get("fallback_marking_scan_max_family_confidence", 0.6)
-        )
-        and bool((settings.get("marking_ocr", {}) or {}).get("fallback_marking_scan_when_family_uncertain", True))
-    ):
-        marking = classify_club_marking(image, "Unknown", config)
-        ocr_payload = _ocr_payload(marking)
-        if marking.exact_club:
-            family = _family_from_exact_marking(marking.exact_club)
-            predicted = marking.exact_club
-            confidence = marking.confidence
-            marking_overrode_family = True
-
-    if marking_overrode_family:
-        status = "confirmed"
-    elif prediction.source in unavailable_sources:
+    if prediction.source in unavailable_sources:
         status = "unavailable"
     elif family in {"Iron", "Wedge"} and (marking is None or not marking.exact_club):
         status = "marking_unavailable" if marking and marking.source in _OCR_UNAVAILABLE_SOURCES else "needs_marking"
@@ -228,8 +205,6 @@ def _five_way_recognition_result(
         stage_confidences["club_marking_ocr"] = round(float(marking.confidence), 3)
         probabilities["club_marking_ocr"] = {}
         reasoning.append(marking.reasoning)
-    if marking_overrode_family:
-        reasoning.append("A high-confidence club marking overrode an uncertain broad club prediction.")
 
     return {
         "status": status,
@@ -304,126 +279,7 @@ def classify_club_marking(image: Image.Image, family: str, config: Dict) -> Club
         elapsed_ms=first_pass.elapsed_ms + sideways_pass.elapsed_ms,
         attempts=first_pass.attempts + sideways_pass.attempts,
     )
-    result = _select_marking_candidate(combined, family, minimum_confidence)
-    if result.exact_club or combined.source in _OCR_UNAVAILABLE_SOURCES:
-        return result
-
-    tiled_result = _read_marking_from_tiles(image, family, config, ocr_settings, minimum_confidence)
-    return tiled_result if tiled_result and tiled_result.exact_club else result
-
-
-def _read_marking_from_tiles(
-    image: Image.Image,
-    family: str,
-    config: Dict,
-    settings: Dict,
-    minimum_confidence: float,
-) -> Optional[ClubMarkingResult]:
-    """Retry OCR on enlarged overlapping tiles after full-image OCR fails.
-
-    A live camera frame often includes the golfer and the club together, leaving
-    a valid loft such as ``60`` too small for the OCR detector. This bounded
-    fallback keeps the original scan fast and only makes four enlarged tile
-    passes when an Iron or Wedge marking remains unresolved.
-    """
-
-    if not bool(settings.get("fallback_tile_scan_on_failure", True)):
-        return None
-
-    candidates: list[OcrCandidate] = []
-    elapsed_ms = 0.0
-    attempts = 0
-    sources: list[str] = []
-    reasonings: list[Optional[str]] = []
-    tile_config = _tile_ocr_config(config, settings)
-
-    for tile, offset in _iter_marking_tiles(image, settings):
-        tile_read = read_marking_candidates(tile, tile_config, rotations=(0,))
-        elapsed_ms += tile_read.elapsed_ms
-        attempts += tile_read.attempts
-        sources.append(tile_read.source)
-        reasonings.append(tile_read.reasoning)
-        for candidate in tile_read.candidates:
-            candidates.append(
-                OcrCandidate(
-                    text=candidate.text,
-                    confidence=candidate.confidence,
-                    bbox=_offset_bbox(candidate.bbox, offset),
-                    rotation_degrees=candidate.rotation_degrees,
-                )
-            )
-
-    if not candidates and all(source in _OCR_UNAVAILABLE_SOURCES for source in sources):
-        return ClubMarkingResult(
-            designation=None,
-            exact_club=None,
-            raw_text=None,
-            confidence=0.0,
-            bbox=None,
-            reasoning=join_reasoning(reasonings),
-            source=sources[0] if sources else "ocr_unavailable",
-            elapsed_ms=round(elapsed_ms, 1),
-            attempts=attempts,
-        )
-
-    tiled = OcrReadResult(
-        candidates=tuple(candidates),
-        source="rapidocr_tiled" if any(source == "rapidocr" for source in sources) else (sources[0] if sources else "rapidocr_tiled"),
-        reasoning=join_reasoning(reasonings),
-        elapsed_ms=round(elapsed_ms, 1),
-        attempts=attempts,
-    )
-    return _select_marking_candidate(tiled, family, minimum_confidence)
-
-
-def _tile_ocr_config(config: Dict, settings: Dict) -> Dict:
-    tiled_config = deepcopy(config)
-    recognition = tiled_config.setdefault("club_recognition", {})
-    tile_settings = dict(recognition.get("marking_ocr", {}) or {})
-    tile_settings["min_image_side"] = max(1, int(settings.get("fallback_tile_min_side", 1200)))
-    recognition["marking_ocr"] = tile_settings
-    return tiled_config
-
-
-def _iter_marking_tiles(image: Image.Image, settings: Dict) -> Iterable[tuple[Image.Image, tuple[int, int]]]:
-    grid = settings.get("fallback_tile_grid", [2, 2])
-    try:
-        columns = max(1, min(4, int(grid[0])))
-        rows = max(1, min(4, int(grid[1])))
-    except (TypeError, ValueError, IndexError):
-        columns, rows = 2, 2
-    try:
-        overlap = max(0.0, min(0.45, float(settings.get("fallback_tile_overlap", 0.18))))
-    except (TypeError, ValueError):
-        overlap = 0.18
-
-    width, height = image.size
-    tile_width = max(1, math.ceil(width / columns))
-    tile_height = max(1, math.ceil(height / rows))
-
-    for top in _tile_starts(height, tile_height, overlap):
-        for left in _tile_starts(width, tile_width, overlap):
-            right = min(width, left + tile_width)
-            bottom = min(height, top + tile_height)
-            yield image.crop((left, top, right, bottom)), (left, top)
-
-
-def _tile_starts(length: int, tile_length: int, overlap: float) -> list[int]:
-    if tile_length >= length:
-        return [0]
-    step = max(1, int(round(tile_length * (1.0 - overlap))))
-    last = length - tile_length
-    starts = list(range(0, last + 1, step))
-    if starts[-1] != last:
-        starts.append(last)
-    return starts
-
-
-def _offset_bbox(bbox: Optional[list[list[float]]], offset: tuple[int, int]) -> Optional[list[list[float]]]:
-    if bbox is None:
-        return None
-    left, top = offset
-    return [[round(x + left, 2), round(y + top, 2)] for x, y in bbox]
+    return _select_marking_candidate(combined, family, minimum_confidence)
 
 
 def _select_marking_candidate(
@@ -658,7 +514,7 @@ def _normalize_club_marking_legacy(label: Optional[str], family: str) -> Optiona
 
 
 def normalize_marking_designation(label: Optional[str], family: str) -> Optional[tuple[str, str]]:
-    """Normalize OCR text only when it is valid for a supported club family.
+    """Normalize OCR text only when it is valid for the detected club family.
 
     OCR character substitutions are context-sensitive: ``S`` remains a valid
     sand-wedge mark, but can represent ``5`` when a two-digit loft is read.
@@ -670,11 +526,6 @@ def normalize_marking_designation(label: Optional[str], family: str) -> Optional
     compact = re.sub(r"[^A-Z0-9]", "", str(label).upper())
     if not compact:
         return None
-
-    # This branch is only used when the broad classifier is uncertain. The
-    # accepted text remains limited to known Iron and Wedge markings.
-    if family == "Unknown":
-        return normalize_marking_designation(label, "Wedge") or normalize_marking_designation(label, "Iron")
 
     if family == "Iron":
         compact = compact.replace("IRON", "")
@@ -708,12 +559,6 @@ def normalize_marking_designation(label: Optional[str], family: str) -> Optional
     if re.fullmatch(r"(?:4[6-9]|5[0-9]|6[0-4])", corrected_loft):
         return corrected_loft, f"{corrected_loft}° Wedge"
     return None
-
-
-def _family_from_exact_marking(exact_club: str) -> str:
-    """Return the only valid family for a normalized OCR club marking."""
-
-    return "Iron" if exact_club.endswith(" Iron") else "Wedge"
 
 
 def normalize_club_marking(label: Optional[str], family: str) -> Optional[str]:
