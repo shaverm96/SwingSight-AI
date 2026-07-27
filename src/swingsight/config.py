@@ -65,16 +65,36 @@ def load_dotenv(path: str | Path = ".env") -> None:
         os.environ[key] = cleaned
 
 
+def _deep_merge(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
+    """Recursively merge override onto base, without mutating either input."""
+    merged = dict(base)
+    for key, value in override.items():
+        if key in merged and isinstance(merged[key], dict) and isinstance(value, dict):
+            merged[key] = _deep_merge(merged[key], value)
+        else:
+            merged[key] = value
+    return merged
+
+
 def load_config(path: str = "config.yaml") -> Dict[str, Any]:
-    """Load config.yaml if present, otherwise fall back to config.example.yaml."""
+    """Load config.yaml if present, otherwise fall back to config.example.yaml.
+
+    Whichever file is loaded is deep-merged over DEFAULT_CONFIG, so a partial
+    config.yaml that only overrides a few settings still gets this module's
+    documented defaults for everything else. Previously a loaded file fully
+    replaced DEFAULT_CONFIG, so a key missing from config.yaml (e.g.
+    club_recognition.confirm_threshold) silently fell back to whatever
+    hardcoded literal each individual call site happened to use
+    (settings.get("confirm_threshold", 0.6)) instead of this module's default.
+    """
     load_dotenv()
     config_path = Path(path)
     if config_path.exists():
-        return _read_yaml(config_path)
+        return _deep_merge(DEFAULT_CONFIG, _read_yaml(config_path))
 
     example_path = Path("config.example.yaml")
     if example_path.exists():
-        return _read_yaml(example_path)
+        return _deep_merge(DEFAULT_CONFIG, _read_yaml(example_path))
 
     return DEFAULT_CONFIG.copy()
 
