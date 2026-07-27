@@ -34,7 +34,12 @@ class AnalysisService:
         paths = self.config.setdefault("paths", {})
         self.uploads_dir = ensure_dir(paths.get("uploads_dir", "uploads"))
         self.outputs_dir = ensure_dir(paths.get("outputs_dir", "outputs"))
-        self.reports_dir = ensure_dir(paths.get("reports_dir", "reports"))
+        # Flask resolves a relative ``send_from_directory`` path from the app
+        # package, whereas report generation uses the process working
+        # directory.  Keep one absolute directory for both operations so a
+        # successfully generated report is always available at its download
+        # URL.
+        self.reports_dir = ensure_dir(paths.get("reports_dir", "reports")).resolve()
         self.gemini_coaching = GeminiCoachingService(self.config.get("gemini", {}))
 
     def run_analysis(self, context: AnalysisContext) -> Dict:
