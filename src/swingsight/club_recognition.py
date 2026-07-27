@@ -108,6 +108,7 @@ def recognize_club_from_frame(image_path: str, config: Dict) -> Dict:
         sources = {"broad_classifier": broad.source, "wood_type_classifier": detail.source}
     elif broad.category == "iron":
         marking = classify_iron_or_wedge_marking(enhanced_image, config)
+        resolved_club = _display_club(marking)
         detail = ClubDetailResult(
             club_type=marking.exact_club,
             confidence=marking.confidence,
@@ -115,7 +116,7 @@ def recognize_club_from_frame(image_path: str, config: Dict) -> Dict:
             reasoning=marking.reasoning,
             source=marking.source,
         )
-        predicted = marking.exact_club or "Iron"
+        predicted = resolved_club or "Iron"
         detected_category = marking.exact_club or "Iron"
         ocr_payload = _ocr_payload(marking)
         sources = {"broad_classifier": broad.source, "club_marking_ocr": detail.source}
@@ -144,7 +145,7 @@ def recognize_club_from_frame(image_path: str, config: Dict) -> Dict:
         "predicted_club": predicted or "Unknown",
         "club_type": detected_category if detected_category != "Unknown" else None,
         "club_number": marking.designation if marking else None,
-        "exact_club": marking.exact_club if marking else None,
+        "exact_club": _display_club(marking) if marking else None,
         "confidence": round(float(confidence), 3),
         "reasoning": join_reasoning([broad.reasoning, detail.reasoning]),
         "bbox": marking.bbox if marking else None,
@@ -219,7 +220,7 @@ def _five_way_recognition_result(
         ocr_payload = _ocr_payload(marking)
         if marking.exact_club:
             family = marking.exact_club
-            predicted = marking.exact_club
+            predicted = _display_club(marking)
             confidence = (0.55 * prediction.confidence) + (0.45 * marking.confidence)
 
     if prediction.source in unavailable_sources:
@@ -250,7 +251,7 @@ def _five_way_recognition_result(
         "predicted_club": predicted or "Unknown",
         "club_type": family,
         "club_number": marking.designation if marking else None,
-        "exact_club": marking.exact_club if marking else None,
+        "exact_club": _display_club(marking) if marking else None,
         "confidence": round(float(confidence), 3),
         "reasoning": join_reasoning(reasoning),
         "bbox": marking.bbox if marking else None,
@@ -313,6 +314,12 @@ def classify_iron_or_wedge_marking(image: Image.Image, config: Dict) -> ClubMark
         attempts=first_pass.attempts + sideways_pass.attempts,
     )
     return _select_iron_or_wedge_candidate(combined, minimum_confidence)
+
+
+def _display_club(marking: ClubMarkingResult) -> Optional[str]:
+    if marking.designation and marking.exact_club:
+        return f"{marking.designation} {marking.exact_club}"
+    return None
 
 
 def _select_iron_or_wedge_candidate(

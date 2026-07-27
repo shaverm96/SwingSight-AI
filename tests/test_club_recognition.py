@@ -85,8 +85,8 @@ def test_iron_branch_uses_full_image_pretrained_ocr(monkeypatch, tmp_path):
     assert result["status"] == "confirmed"
     assert result["club_type"] == "Iron"
     assert result["club_number"] == "7"
-    assert result["exact_club"] == "Iron"
-    assert result["predicted_club"] == "Iron"
+    assert result["exact_club"] == "7 Iron"
+    assert result["predicted_club"] == "7 Iron"
     assert result["ocr"]["raw_text"] == "7"
     assert result["sources"]["club_marking_ocr"] == "rapidocr"
 
@@ -235,7 +235,8 @@ def test_five_way_wedge_is_corrected_to_iron_from_its_number(monkeypatch, tmp_pa
 
     assert result["club_type"] == "Iron"
     assert result["club_number"] == "8"
-    assert result["exact_club"] == "Iron"
+    assert result["exact_club"] == "8 Iron"
+    assert result["predicted_club"] == "8 Iron"
 
 
 def test_five_way_iron_is_corrected_to_wedge_from_its_number(monkeypatch, tmp_path):
@@ -256,7 +257,8 @@ def test_five_way_iron_is_corrected_to_wedge_from_its_number(monkeypatch, tmp_pa
 
     assert result["club_type"] == "Wedge"
     assert result["club_number"] == "52"
-    assert result["exact_club"] == "Wedge"
+    assert result["exact_club"] == "52 Wedge"
+    assert result["predicted_club"] == "52 Wedge"
 
 
 def test_five_way_checkpoint_is_automatically_resolved_for_the_runtime(tmp_path):
