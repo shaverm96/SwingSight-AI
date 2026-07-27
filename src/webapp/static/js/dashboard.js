@@ -9,9 +9,16 @@ const state = {
   analysisProgressAdvanceTimer: null,
 };
 
+const UPLOAD_CLUB_DETAILS = {
+  Iron: ["1", "2", "3", "4", "5", "6", "7", "8", "9", "P", "G", "A", "S"],
+  Wedge: ["46", "48", "50", "52", "54", "56", "58", "60", "62", "64"],
+};
+
 const uploadInput = document.getElementById("uploadInput");
 const uploadTrigger = document.getElementById("uploadTrigger");
 const uploadClubSelect = document.getElementById("uploadClubSelect");
+const uploadClubDetailField = document.getElementById("uploadClubDetailField");
+const uploadClubDetailSelect = document.getElementById("uploadClubDetailSelect");
 const recordTrigger = document.getElementById("recordTrigger");
 const startGuideButton = document.getElementById("startGuideButton");
 const cancelRecordButton = document.getElementById("cancelRecordButton");
@@ -27,11 +34,35 @@ const analysisProgressBar = document.getElementById("analysisProgressBar");
 const analysisProgressElapsed = document.getElementById("analysisProgressElapsed");
 
 uploadClubSelect.addEventListener("change", () => {
-  state.uploadClub = uploadClubSelect.value || null;
+  updateUploadClubSelection();
+});
+
+uploadClubDetailSelect.addEventListener("change", () => {
+  const family = uploadClubSelect.value;
+  const designation = uploadClubDetailSelect.value;
+  state.uploadClub = designation && family ? `${designation} ${family}` : null;
   uploadTrigger.disabled = !state.uploadClub;
 });
 
 uploadTrigger.addEventListener("click", () => uploadInput.click());
+
+function updateUploadClubSelection() {
+  const family = uploadClubSelect.value;
+  const requiresDetail = Object.hasOwn(UPLOAD_CLUB_DETAILS, family);
+
+  uploadClubDetailField.classList.toggle("hidden", !requiresDetail);
+  uploadClubDetailSelect.disabled = !requiresDetail;
+  uploadClubDetailSelect.replaceChildren(new Option(requiresDetail ? `Choose your ${family.toLowerCase()}` : "Choose your club first", ""));
+
+  if (requiresDetail) {
+    for (const designation of UPLOAD_CLUB_DETAILS[family]) {
+      uploadClubDetailSelect.add(new Option(`${designation} ${family}`, designation));
+    }
+  }
+
+  state.uploadClub = requiresDetail ? null : family || null;
+  uploadTrigger.disabled = !state.uploadClub;
+}
 
 uploadInput.addEventListener("change", async () => {
   const file = uploadInput.files?.[0];

@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}?v=20260722-club-marking" />
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}?v=20260727-exact-club" />
   </head>
   <body>
     <div class="page-shell start-page">
@@ -37,6 +37,7 @@
               <div class="option-icon" aria-hidden="true">↑</div>
               <div><p class="card-kicker">From your camera roll</p><h3>Upload a swing</h3><p>Have a video already? Tell us your club and we’ll handle the rest.</p></div>
               <div class="club-field"><label for="uploadClubSelect">Club used</label><select id="uploadClubSelect" class="club-select"><option value="">Choose your club</option><option value="Driver">Driver</option><option value="Wood">Fairway Wood</option><option value="Hybrid">Hybrid</option><option value="Iron">Iron</option><option value="Wedge">Wedge</option></select></div>
+              <div id="uploadClubDetailField" class="club-field hidden"><label for="uploadClubDetailSelect">Exact club</label><select id="uploadClubDetailSelect" class="club-select" disabled aria-describedby="uploadClubDetailHint"><option value="">Choose your club first</option></select><p id="uploadClubDetailHint" class="club-field-hint">Choose the number or marking printed on your club.</p></div>
               <div class="option-actions"><input id="uploadInput" class="hidden-input" type="file" accept="video/*" /><button id="uploadTrigger" class="button primary" disabled>Choose a video <span>→</span></button></div>
             </article>
             <article class="option-card record-card">
@@ -64,6 +65,6 @@
         <p id="analysisProgressElapsed" class="progress-elapsed">Just getting started</p>
       </section>
     </div>
-    <script src="{{ url_for('static', filename='js/dashboard.js') }}?v=20260722-club-marking"></script>
+    <script src="{{ url_for('static', filename='js/dashboard.js') }}?v=20260727-exact-club"></script>
   </body>
 </html>

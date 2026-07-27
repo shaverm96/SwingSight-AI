@@ -98,6 +98,7 @@ button:focus-visible, select:focus-visible, a:focus-visible {
 .club-field { width: min(100%, 480px); margin-top: 28px; }
 .club-field label { display: block; margin-bottom: 9px; color: #526055; font-size: 0.82rem; font-weight: 750; }
 .club-select { width: 100%; min-height: 53px; padding: 0 15px; color: var(--ink); font-weight: 600; background: #fff; border: 1px solid rgba(18, 42, 22, 0.14); border-radius: 14px; appearance: auto; }
+.club-field-hint { margin: 8px 2px 0; color: var(--subtle); font-size: 0.78rem; line-height: 1.4; }
 .record-tip { display: flex; align-items: flex-start; gap: 8px; max-width: 460px; margin-top: 29px; padding: 14px 15px; color: #d4e5d3; font-size: 0.85rem; line-height: 1.45; border: 1px solid rgba(236, 255, 236, 0.14); border-radius: 14px; background: rgba(5, 30, 13, 0.25); }
 .record-tip span { color: #bfff91; }
 
