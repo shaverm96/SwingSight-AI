@@ -3,6 +3,11 @@
 # is installed separately.
 
 flask>=3.0.0
+# Flask's own app.run() looks for python-dotenv to load .env files; without
+# it, Flask tries to print a tip via click/colorama, which can crash on some
+# Windows consoles (OSError: Windows error: 6). Installing it avoids that
+# code path entirely (this project's own config loader does not depend on it).
+python-dotenv>=1.0.0
 opencv-python>=4.8.0
 mediapipe>=0.10.0
 ultralytics>=8.0.0
