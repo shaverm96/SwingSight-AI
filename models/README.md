@@ -6,21 +6,21 @@ reference model for the broad club decision.
 
 ## Five-way club-type checkpoints
 
-- `trained/club_type_5way.pt` — ResNet-101 checkpoint for `driver`,
+- `trained/club_type_5way.pt` â€” ResNet-50 checkpoint for `driver`,
   `wood`, `hybrid`, `iron`, and `wedge`
-- `trained/club_type_5way_cnn.pt` — compact custom-CNN baseline for the same
+- `trained/club_type_5way_cnn.pt` â€” compact custom-CNN baseline for the same
   five classes
 
 Legacy broad/wood checkpoints are still supported for installations that do
 not use the five-way model:
 
-- `trained/club_broad_cnn.pt` — `iron` versus `wood`
-- `trained/club_iron_number_cnn.pt` — legacy Iron numbers
-- `trained/club_wood_type_cnn.pt` — `driver`, `wood`, or `hybrid`
+- `trained/club_broad_cnn.pt` â€” `iron` versus `wood`
+- `trained/club_iron_number_cnn.pt` â€” legacy Iron numbers
+- `trained/club_wood_type_cnn.pt` â€” `driver`, `wood`, or `hybrid`
 
 Previously trained MobileNetV3-Small five-way checkpoints remain supported by
 the runtime. Running `notebooks/03_train_five_way_club_cnn.ipynb` again writes
-the new ResNet-101 format to `trained/club_type_5way.pt`.
+the new ResNet-50 format to `trained/club_type_5way.pt`.
 
 ## Exact Iron and Wedge markings
 
