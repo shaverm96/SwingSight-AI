@@ -208,9 +208,13 @@ def _extract_candidates(output: Any) -> Iterable[OcrCandidate]:
 
 
 def _zip_candidates(texts: Iterable[Any], scores: Optional[Iterable[Any]], boxes: Optional[Iterable[Any]]) -> list[OcrCandidate]:
-    text_values = list(texts or ())
-    score_values = list(scores or ())
-    box_values = list(boxes or ())
+    # RapidOCR returns numpy arrays for scores/boxes, not plain lists. Do not
+    # write `boxes or ()` -- evaluating the truthiness of a multi-element
+    # numpy array raises "The truth value of an array with more than one
+    # element is ambiguous", so check identity against None explicitly.
+    text_values = list(texts) if texts is not None else []
+    score_values = list(scores) if scores is not None else []
+    box_values = list(boxes) if boxes is not None else []
     return [
         OcrCandidate(
             text=str(text),

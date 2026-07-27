@@ -84,7 +84,7 @@ cancelRecordButton.addEventListener("click", () => {
 async function openRecorder() {
   state.recordedClub = null;
   updateStep("Scan club");
-  recordClubStatus.textContent = "Show the club face or sole to the camera, then tap Scan club & start.";
+  recordClubStatus.textContent = "Show the club face or sole to the camera. A short countdown gives you time to get in position before the photo is taken.";
   startGuideButton.textContent = "Scan club & start";
   recordPanel.classList.remove("hidden");
   recordPanel.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -134,6 +134,7 @@ async function runGuidedCapture() {
     }
   }
   updateStep("Scan club");
+  await runClubScanCountdown();
   updateStatus("Checking your club type and, for irons or wedges, its marking with OCR...");
   const clubResult = await detectClubFromCamera();
   if (!clubResult) {
@@ -166,6 +167,20 @@ async function runGuidedCapture() {
     video_upload_id: uploadPayload.upload_id,
     club_category: state.recordedClub,
   });
+}
+
+async function runClubScanCountdown(seconds = 3) {
+  // Give the golfer a moment to hold the club up to the camera -- mirrors
+  // taking a deliberate photo (as in 04_test_club_type_5way.ipynb) instead
+  // of capturing whatever happens to be in frame the instant the button is
+  // clicked.
+  for (let remaining = seconds; remaining > 0; remaining -= 1) {
+    recordClubStatus.textContent = `Hold the club face or sole steady \u2014 capturing in ${remaining}...`;
+    updateStatus(`Get ready \u2014 capturing in ${remaining}`);
+    await wait(1000);
+  }
+  recordClubStatus.textContent = "Capturing now \u2014 hold steady.";
+  updateStatus("Capturing club photo...");
 }
 
 async function attemptBodyCheck() {
