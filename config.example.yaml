@@ -9,6 +9,20 @@ pose_estimation:
   backend: mediapipe
   confidence_threshold: 0.5
 
+club_localization:
+  # Crops toward the golfer's arms/hands (using yolov8n-pose.pt, already
+  # bundled with the project) before the five-way classifier runs below.
+  # That classifier is trained on isolated club-head photos, not full
+  # "person holding a club" frames -- cropping first keeps live-capture
+  # photos closer to that training distribution. This is a heuristic ROI
+  # based on pose keypoints, not a trained club detector; see
+  # swingsight.club_localization for details and known failure modes.
+  enabled: true
+  pose_model_path: yolov8n-pose.pt
+  min_keypoint_confidence: 0.3
+  padding_fraction: 0.45
+  min_padding_scale: 0.6
+
 club_recognition:
   confirm_threshold: 0.6
   # Preferred live-capture classifier. The checkpoint stores the five class

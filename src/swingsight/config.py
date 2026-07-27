@@ -14,6 +14,17 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "outputs_dir": "outputs",
         "reports_dir": "reports",
     },
+    "club_localization": {
+        # Crops toward the golfer's arms/hands (using yolov8n-pose.pt, already
+        # bundled with the project) before the five-way classifier runs, since
+        # that classifier is trained on isolated club-head photos rather than
+        # full "person holding a club" frames. See swingsight.club_localization.
+        "enabled": True,
+        "pose_model_path": "yolov8n-pose.pt",
+        "min_keypoint_confidence": 0.3,
+        "padding_fraction": 0.45,
+        "min_padding_scale": 0.6,
+    },
     "club_recognition": {
         "confirm_threshold": 0.6,
         "five_way_cnn_model_path": "models/trained/club_type_5way.pt",

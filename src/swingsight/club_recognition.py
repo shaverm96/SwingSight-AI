@@ -7,6 +7,7 @@ from typing import Dict, Optional
 from PIL import Image
 
 from swingsight.club_cnn import CnnPrediction, classify_image
+from swingsight.club_localization import locate_club_crop
 from swingsight.club_marking_ocr import OcrCandidate, OcrReadResult, read_marking_candidates
 from swingsight.image_preprocessing import apply_adaptive_contrast_rgb
 
@@ -46,9 +47,29 @@ class ClubMarkingResult:
 
 def recognize_club_from_frame(image_path: str, config: Dict) -> Dict:
     image = Image.open(image_path).convert("RGB")
+
+    # The five-way CNN is trained on catalog-style photos of an isolated club
+    # head, not full "person holding a club" frames. Crop toward the golfer's
+    # arms/hands first (using the YOLOv8-pose model already bundled with the
+    # project) so the classifier sees something closer to its training
+    # distribution. This is a heuristic ROI, not a trained club detector --
+    # see swingsight.club_localization for details and failure modes.
+    localization_settings = config.get("club_localization", {}) or {}
+    if bool(localization_settings.get("enabled", True)):
+        crop_result = locate_club_crop(
+            image,
+            model_path=localization_settings.get("pose_model_path", "yolov8n-pose.pt"),
+            min_keypoint_confidence=float(localization_settings.get("min_keypoint_confidence", 0.3)),
+            padding_fraction=float(localization_settings.get("padding_fraction", 0.45)),
+            min_padding_scale=float(localization_settings.get("min_padding_scale", 0.6)),
+        )
+    else:
+        crop_result = None
+    working_image = crop_result.image if crop_result is not None else image
+
     preprocessing = config.get("preprocessing", {}) or {}
     enhanced_image = apply_adaptive_contrast_rgb(
-        image,
+        working_image,
         enabled=bool(preprocessing.get("adaptive_contrast", True)),
         clip_limit=float(preprocessing.get("adaptive_contrast_clip_limit", 2.0)),
         tile_grid_size=tuple(preprocessing.get("adaptive_contrast_tile_grid_size", [8, 8])) if preprocessing.get("adaptive_contrast_tile_grid_size") else (8, 8),
@@ -58,7 +79,13 @@ def recognize_club_from_frame(image_path: str, config: Dict) -> Dict:
     # Keep the existing staged path available for installations that do not use it.
     five_way = classify_five_way_club_type(enhanced_image, config)
     if five_way.source != "not_configured":
-        return _five_way_recognition_result(enhanced_image, five_way, config)
+        result = _five_way_recognition_result(enhanced_image, five_way, config)
+        result["club_localization"] = {
+            "cropped": bool(crop_result.cropped) if crop_result is not None else False,
+            "box": list(crop_result.box) if crop_result is not None and crop_result.box else None,
+            "reasoning": crop_result.reasoning if crop_result is not None else "Club localization disabled by config.",
+        }
+        return result
 
     broad = classify_broad_category(enhanced_image, config)
 
