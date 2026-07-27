@@ -2,23 +2,22 @@
 
 The five-way club-type CNN (see ``club_cnn.py``) is trained on catalog-style
 reference photos: an isolated club head, filling the frame, plain background.
-Feeding it a full "address position" photo -- golfer, room, background
-clutter, and a small club -- puts the input far outside that training
-distribution, which is why raw full-frame photos are misclassified far more
-often than the cropped catalog photos used for validation.
+Feeding it a full "show it to the camera" photo -- background clutter and a
+small club -- puts the input far outside that training distribution. Held-out
+catalog test accuracy for the checkpoint this module feeds is ~99%, so a live
+misclassification is a sign of that domain gap, not the classifier itself:
+tightening the crop around the club closes most of the gap.
 
-This module uses the YOLOv8-pose model already bundled with the project
-(``yolov8n-pose.pt``) to find the golfer's wrists/grip position, then crops a
-region around them sized relative to body scale (shoulder width). This is a
-practical stand-in for a dedicated, separately trained club detector -- it
-will not be perfect (occluded grips, extreme camera angles, multiple people
-in frame), but it removes most of the irrelevant background before
-classification and is built entirely from a model already in this repo, so
-it needs no new training data to ship.
+This module detects a HAND directly with MediaPipe's HandLandmarker task
+(``hand_landmarker.task``, bundled with the project) and crops tightly around
+it. Unlike an earlier version of this module built on YOLOv8-pose body
+keypoints, this does not require a visible torso/shoulders or any particular
+stance -- a close-up shot of just a hand holding a club up to the camera is
+enough, which matches how this feature is actually used.
 
-If no confident person/wrist detection is available, the original image is
-returned unmodified (``cropped=False``) so callers can still classify it,
-while treating the result with extra caution.
+If no confident hand is found, the original image is returned unmodified
+(``cropped=False``) so callers can still classify it, while treating the
+result with extra caution.
 """
 
 from __future__ import annotations
@@ -31,30 +30,27 @@ import numpy as np
 from PIL import Image
 
 try:
-    from ultralytics import YOLO
+    import mediapipe as mp
+    from mediapipe.tasks.python import BaseOptions
+    from mediapipe.tasks.python.vision import HandLandmarker, HandLandmarkerOptions
 except Exception:  # pragma: no cover - optional dependency
-    YOLO = None
+    mp = None
+    BaseOptions = None
+    HandLandmarker = None
+    HandLandmarkerOptions = None
 
-# Standard COCO-17 keypoint order used by Ultralytics YOLOv8-pose, matching
-# swingsight.pose_estimation.COCO_KEYPOINTS.
-LEFT_SHOULDER = 5
-RIGHT_SHOULDER = 6
-LEFT_ELBOW = 7
-RIGHT_ELBOW = 8
-LEFT_WRIST = 9
-RIGHT_WRIST = 10
-
-# Keypoints used to bound the crop. A club can be held with two hands close
-# together (address position) or one hand raised to show it to the camera
-# (the other arm relaxed at the side) -- using only the wrist midpoint biases
-# the crop toward whichever arm happens to be idle. Spanning the whole
-# shoulder-to-wrist region for both arms is more robust to either pose.
-UPPER_BODY_KEYPOINTS = (LEFT_SHOULDER, RIGHT_SHOULDER, LEFT_ELBOW, RIGHT_ELBOW, LEFT_WRIST, RIGHT_WRIST)
-
-DEFAULT_POSE_MODEL_PATH = "yolov8n-pose.pt"
-DEFAULT_MIN_KEYPOINT_CONFIDENCE = 0.3
-DEFAULT_PADDING_FRACTION = 0.45  # padding added to the upper-body box, as a fraction of its own width/height
-DEFAULT_MIN_PADDING_SCALE = 0.6  # padding floor, as a multiple of shoulder width, for small/compact boxes
+DEFAULT_HAND_MODEL_PATH = "hand_landmarker.task"
+DEFAULT_MIN_DETECTION_CONFIDENCE = 0.3
+DEFAULT_MIN_PRESENCE_CONFIDENCE = 0.3
+# Crop side length, as a multiple of the detected hand's bounding-box size.
+# Calibrated from a known-good manual crop where the hand's landmark bbox was
+# ~50px inside a 288px crop that fully framed the club head (288/50 ~= 5.8).
+# Treat this as a starting point -- tune against real captures.
+DEFAULT_CROP_SCALE = 5.5
+# If two hands are detected, merge them into one crop when their centers are
+# closer together than this multiple of the larger hand's size (two-handed
+# grip); otherwise the larger/closer-looking hand is used alone.
+DEFAULT_MERGE_RATIO = 1.5
 
 
 @dataclass(frozen=True)
@@ -67,102 +63,108 @@ class ClubCropResult:
     reasoning: str
 
 
-@lru_cache(maxsize=4)
-def _load_pose_model(model_path: str):
-    if YOLO is None:
+@lru_cache(maxsize=2)
+def _load_hand_detector(model_path: str, min_detection_confidence: float, min_presence_confidence: float):
+    if mp is None or HandLandmarker is None:
         return None
     try:
-        return YOLO(model_path)
-    except Exception:  # pragma: no cover - missing/corrupt weights file
+        base_options = BaseOptions(model_asset_path=model_path)
+        options = HandLandmarkerOptions(
+            base_options=base_options,
+            num_hands=2,
+            min_hand_detection_confidence=min_detection_confidence,
+            min_hand_presence_confidence=min_presence_confidence,
+        )
+        return HandLandmarker.create_from_options(options)
+    except Exception:  # pragma: no cover - missing/corrupt model file or runtime issue
         return None
+
+
+def _hand_bbox(landmarks, width: int, height: int) -> tuple[float, float, float, float]:
+    xs = [landmark.x * width for landmark in landmarks]
+    ys = [landmark.y * height for landmark in landmarks]
+    return min(xs), min(ys), max(xs), max(ys)
 
 
 def locate_club_crop(
     image: Image.Image,
     *,
-    model_path: str = DEFAULT_POSE_MODEL_PATH,
-    min_keypoint_confidence: float = DEFAULT_MIN_KEYPOINT_CONFIDENCE,
-    padding_fraction: float = DEFAULT_PADDING_FRACTION,
-    min_padding_scale: float = DEFAULT_MIN_PADDING_SCALE,
+    model_path: str = DEFAULT_HAND_MODEL_PATH,
+    min_detection_confidence: float = DEFAULT_MIN_DETECTION_CONFIDENCE,
+    min_presence_confidence: float = DEFAULT_MIN_PRESENCE_CONFIDENCE,
+    crop_scale: float = DEFAULT_CROP_SCALE,
+    merge_ratio: float = DEFAULT_MERGE_RATIO,
 ) -> ClubCropResult:
-    """Crop ``image`` around the golfer's arms/hands using YOLOv8-pose keypoints.
+    """Crop ``image`` tightly around a detected hand -- no body or stance required.
 
-    Falls back to returning the original image, uncropped, if ultralytics is
-    unavailable or no confident person/arm keypoints are found.
+    Falls back to returning the original image, uncropped, if mediapipe is
+    unavailable or no hand is found. Any unexpected failure also falls back
+    rather than raising -- this crop is an accuracy boost, not a required
+    step, and must never block classification.
     """
     rgb = image.convert("RGB")
 
-    model = _load_pose_model(model_path)
-    if model is None:
-        return ClubCropResult(rgb, False, None, "Pose model unavailable; classifying the full frame.")
+    detector = _load_hand_detector(model_path, min_detection_confidence, min_presence_confidence)
+    if detector is None:
+        return ClubCropResult(rgb, False, None, "Hand detector unavailable; classifying the full frame.")
 
-    frame = np.array(rgb)
     try:
-        results = model.predict(frame, verbose=False)
-        if not results or results[0].keypoints is None or len(results[0].keypoints) == 0:
-            return ClubCropResult(rgb, False, None, "No person detected; classifying the full frame.")
+        frame = np.ascontiguousarray(np.array(rgb))
+        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame)
+        result = detector.detect(mp_image)
 
-        result = results[0]
-        boxes = result.boxes
-        person_index = int(boxes.conf.argmax().item()) if boxes is not None and len(boxes) > 0 else 0
+        if not result.hand_landmarks:
+            return ClubCropResult(rgb, False, None, "No hand detected; classifying the full frame.")
 
-        xy = result.keypoints.xy[person_index].cpu().numpy()
-        conf = result.keypoints.conf[person_index].cpu().numpy() if result.keypoints.conf is not None else None
+        boxes = [_hand_bbox(landmarks, rgb.width, rgb.height) for landmarks in result.hand_landmarks]
+        sizes = [max(box[2] - box[0], box[3] - box[1]) for box in boxes]
 
-        def confident(index: int) -> bool:
-            return conf is None or conf[index] >= min_keypoint_confidence
+        if len(boxes) > 1:
+            # There is no elbow/arm context here to tell which hand is
+            # "engaged" the way the earlier pose-based version could, so:
+            # merge close-together hands (two-handed grip), otherwise fall
+            # back to the larger/closer-looking hand.
+            (left0, top0, right0, bottom0), (left1, top1, right1, bottom1) = boxes[0], boxes[1]
+            center0 = ((left0 + right0) / 2.0, (top0 + bottom0) / 2.0)
+            center1 = ((left1 + right1) / 2.0, (top1 + bottom1) / 2.0)
+            center_distance = float(np.hypot(center0[0] - center1[0], center0[1] - center1[1]))
+            larger_size = max(sizes)
 
-        if confident(LEFT_SHOULDER) and confident(RIGHT_SHOULDER):
-            shoulder_width = float(np.linalg.norm(xy[LEFT_SHOULDER] - xy[RIGHT_SHOULDER]))
+            if center_distance < merge_ratio * larger_size:
+                min_x = min(left0, left1)
+                min_y = min(top0, top1)
+                max_x = max(right0, right1)
+                max_y = max(bottom0, bottom1)
+                hand_size = max(max_x - min_x, max_y - min_y)
+                center = ((min_x + max_x) / 2.0, (min_y + max_y) / 2.0)
+                reasoning = "Cropped around both hands (close together)."
+            else:
+                index = int(np.argmax(sizes))
+                left, top, right, bottom = boxes[index]
+                hand_size = sizes[index]
+                center = ((left + right) / 2.0, (top + bottom) / 2.0)
+                reasoning = "Cropped around the larger/closer of two detected hands."
         else:
-            shoulder_width = 0.0
-        if shoulder_width <= 1e-3:
-            # Shoulders not visible (tight crop, turned away, etc.) -- fall back to
-            # a fraction of the frame size for the padding floor below.
-            shoulder_width = 0.18 * min(rgb.width, rgb.height)
+            left, top, right, bottom = boxes[0]
+            hand_size = sizes[0]
+            center = ((left + right) / 2.0, (top + bottom) / 2.0)
+            reasoning = "Cropped around the detected hand."
 
-        # Span the whole shoulder-to-wrist region for both arms rather than just
-        # the wrist midpoint. A club can be held with two hands close together
-        # (address position) or one hand raised to show it to the camera while
-        # the other arm hangs relaxed -- spanning both arms means whichever one
-        # is actually holding the club stays inside the box either way.
-        points = [
-            xy[index]
-            for index in UPPER_BODY_KEYPOINTS
-            if confident(index) and not np.allclose(xy[index], 0)
-        ]
-        if not points:
-            return ClubCropResult(rgb, False, None, "No confident arm keypoints; classifying the full frame.")
+        side = max(48.0, crop_scale * hand_size)
+        left_bound = int(max(0, center[0] - side / 2))
+        top_bound = int(max(0, center[1] - side / 2))
+        right_bound = int(min(rgb.width, center[0] + side / 2))
+        bottom_bound = int(min(rgb.height, center[1] + side / 2))
 
-        xs = [point[0] for point in points]
-        ys = [point[1] for point in points]
-        box_left, box_right = min(xs), max(xs)
-        box_top, box_bottom = min(ys), max(ys)
-        box_width = max(box_right - box_left, 1.0)
-        box_height = max(box_bottom - box_top, 1.0)
-
-        pad_x = max(padding_fraction * box_width, min_padding_scale * shoulder_width)
-        pad_y = max(padding_fraction * box_height, min_padding_scale * shoulder_width)
-
-        left = int(max(0, box_left - pad_x))
-        top = int(max(0, box_top - pad_y))
-        right = int(min(rgb.width, box_right + pad_x))
-        bottom = int(min(rgb.height, box_bottom + pad_y))
-
-        if right - left < 16 or bottom - top < 16:
+        if right_bound - left_bound < 16 or bottom_bound - top_bound < 16:
             return ClubCropResult(rgb, False, None, "Degenerate crop box; classifying the full frame.")
 
-        crop = rgb.crop((left, top, right, bottom))
-        return ClubCropResult(
-            crop,
-            True,
-            (left, top, right, bottom),
-            "Cropped around the detected arm/hand region.",
-        )
+        crop = rgb.crop((left_bound, top_bound, right_bound, bottom_bound))
+        return ClubCropResult(crop, True, (left_bound, top_bound, right_bound, bottom_bound), reasoning)
     except Exception as error:
         # This crop is a nice-to-have accuracy boost, not a required step.
-        # Any failure here (unexpected ultralytics/torch output shape, a
-        # keypoint schema mismatch across versions, etc.) must never block
-        # classification -- fall back to the uncropped frame instead of
-        # letting the exception propagate up through detect_club().
-        return ClubCropResult(rgb, False, None, f"Pose-based crop failed ({error}); classifying the full frame.")
+        # Any failure here (unexpected mediapipe output shape, a runtime
+        # backend issue, etc.) must never block classification -- fall back
+        # to the uncropped frame instead of letting the exception propagate
+        # up through detect_club().
+        return ClubCropResult(rgb, False, None, f"Hand-based crop failed ({error}); classifying the full frame.")

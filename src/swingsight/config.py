@@ -15,15 +15,19 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "reports_dir": "reports",
     },
     "club_localization": {
-        # Crops toward the golfer's arms/hands (using yolov8n-pose.pt, already
-        # bundled with the project) before the five-way classifier runs, since
-        # that classifier is trained on isolated club-head photos rather than
-        # full "person holding a club" frames. See swingsight.club_localization.
+        # Crops toward a detected hand (using hand_landmarker.task, already
+        # bundled with the project) before the five-way classifier runs,
+        # since that classifier is trained on isolated club-head photos
+        # rather than full "person holding a club" frames. Unlike an earlier
+        # pose-based version, this does not require a visible body or golf
+        # stance -- a close-up of just a hand is enough. See
+        # swingsight.club_localization.
         "enabled": True,
-        "pose_model_path": "yolov8n-pose.pt",
-        "min_keypoint_confidence": 0.3,
-        "padding_fraction": 0.45,
-        "min_padding_scale": 0.6,
+        "hand_model_path": "hand_landmarker.task",
+        "min_detection_confidence": 0.3,
+        "min_presence_confidence": 0.3,
+        "crop_scale": 5.5,
+        "merge_ratio": 1.5,
     },
     "club_recognition": {
         "confirm_threshold": 0.45,

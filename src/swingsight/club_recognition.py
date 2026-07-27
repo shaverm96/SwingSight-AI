@@ -49,21 +49,24 @@ def recognize_club_from_frame(image_path: str, config: Dict) -> Dict:
     image = Image.open(image_path).convert("RGB")
 
     # The five-way CNN is trained on catalog-style photos of an isolated club
-    # head, not full "person holding a club" frames. Crop toward the golfer's
-    # arms/hands first (using the YOLOv8-pose model already bundled with the
-    # project) so the classifier sees something closer to its training
-    # distribution. This is a heuristic ROI, not a trained club detector --
-    # see swingsight.club_localization for details and failure modes.
+    # head, not full "person holding a club" frames. Crop toward a detected
+    # hand first (using the MediaPipe HandLandmarker model already bundled
+    # with the project) so the classifier sees something closer to its
+    # training distribution. Unlike an earlier pose-based version, this does
+    # not require a visible body or golf stance. This is a heuristic ROI,
+    # not a trained club detector -- see swingsight.club_localization for
+    # details and failure modes.
     localization_settings = config.get("club_localization", {}) or {}
     crop_result = None
     if bool(localization_settings.get("enabled", True)):
         try:
             crop_result = locate_club_crop(
                 image,
-                model_path=localization_settings.get("pose_model_path", "yolov8n-pose.pt"),
-                min_keypoint_confidence=float(localization_settings.get("min_keypoint_confidence", 0.3)),
-                padding_fraction=float(localization_settings.get("padding_fraction", 0.45)),
-                min_padding_scale=float(localization_settings.get("min_padding_scale", 0.6)),
+                model_path=localization_settings.get("hand_model_path", "hand_landmarker.task"),
+                min_detection_confidence=float(localization_settings.get("min_detection_confidence", 0.3)),
+                min_presence_confidence=float(localization_settings.get("min_presence_confidence", 0.3)),
+                crop_scale=float(localization_settings.get("crop_scale", 5.5)),
+                merge_ratio=float(localization_settings.get("merge_ratio", 1.5)),
             )
         except Exception as error:
             # Belt-and-suspenders: locate_club_crop already catches its own
