@@ -24,7 +24,7 @@ club_localization:
   min_padding_scale: 0.6
 
 club_recognition:
-  confirm_threshold: 0.6
+  confirm_threshold: 0.45
   # Preferred live-capture classifier. The checkpoint stores the five class
   # labels: driver, wood, hybrid, iron, and wedge.
   five_way_cnn_model_path: models/trained/club_type_5way.pt
