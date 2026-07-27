@@ -1,0 +1,14 @@
+127.0.0.1 - - [27/Jul/2026 11:58:05] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [27/Jul/2026 11:58:05] "GET /static/css/dashboard.css?v=20260722-club-marking HTTP/1.1" 304 -
+127.0.0.1 - - [27/Jul/2026 11:58:05] "GET /static/js/dashboard.js?v=20260722-club-marking HTTP/1.1" 304 -
+[INFO] 2026-07-27 11:58:30,449 [RapidOCR] base.py:23: Using engine_name: onnxruntime
+[INFO] 2026-07-27 11:58:30,504 [RapidOCR] download_file.py:60: File exists and is valid: /Users/mattshaver/Desktop/SwingSight-AI/.venv/lib/python3.13/site-packages/rapidocr/models/PP-OCRv6_det_small.onnx
+[INFO] 2026-07-27 11:58:30,504 [RapidOCR] main.py:63: Using /Users/mattshaver/Desktop/SwingSight-AI/.venv/lib/python3.13/site-packages/rapidocr/models/PP-OCRv6_det_small.onnx
+[INFO] 2026-07-27 11:58:30,543 [RapidOCR] base.py:23: Using engine_name: onnxruntime
+[INFO] 2026-07-27 11:58:30,544 [RapidOCR] download_file.py:60: File exists and is valid: /Users/mattshaver/Desktop/SwingSight-AI/.venv/lib/python3.13/site-packages/rapidocr/models/ch_ppocr_mobile_v2.0_cls_mobile.onnx
+[INFO] 2026-07-27 11:58:30,544 [RapidOCR] main.py:63: Using /Users/mattshaver/Desktop/SwingSight-AI/.venv/lib/python3.13/site-packages/rapidocr/models/ch_ppocr_mobile_v2.0_cls_mobile.onnx
+[INFO] 2026-07-27 11:58:30,555 [RapidOCR] base.py:23: Using engine_name: onnxruntime
+[INFO] 2026-07-27 11:58:30,565 [RapidOCR] download_file.py:60: File exists and is valid: /Users/mattshaver/Desktop/SwingSight-AI/.venv/lib/python3.13/site-packages/rapidocr/models/PP-OCRv6_rec_small.onnx
+[INFO] 2026-07-27 11:58:30,565 [RapidOCR] main.py:63: Using /Users/mattshaver/Desktop/SwingSight-AI/.venv/lib/python3.13/site-packages/rapidocr/models/PP-OCRv6_rec_small.onnx
+[WARNING] 2026-07-27 11:58:30,644 [RapidOCR] main.py:132: The text detection result is empty
+[WARNING] 2026-07-27 11:58:30,765 [RapidOCR] main.py:132: The text detection result is empty
