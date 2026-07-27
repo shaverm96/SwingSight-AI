@@ -107,7 +107,7 @@ def recognize_club_from_frame(image_path: str, config: Dict) -> Dict:
         ocr_payload = None
         sources = {"broad_classifier": broad.source, "wood_type_classifier": detail.source}
     elif broad.category == "iron":
-        marking = classify_club_marking(enhanced_image, "Iron", config)
+        marking = classify_iron_or_wedge_marking(enhanced_image, config)
         detail = ClubDetailResult(
             club_type=marking.exact_club,
             confidence=marking.confidence,
@@ -116,7 +116,7 @@ def recognize_club_from_frame(image_path: str, config: Dict) -> Dict:
             source=marking.source,
         )
         predicted = marking.exact_club or "Iron"
-        detected_category = "Iron"
+        detected_category = marking.exact_club or "Iron"
         ocr_payload = _ocr_payload(marking)
         sources = {"broad_classifier": broad.source, "club_marking_ocr": detail.source}
     else:
@@ -208,21 +208,23 @@ def _five_way_recognition_result(
     confirm_threshold = float(settings.get("confirm_threshold", 0.6))
     unavailable_sources = {"cnn_missing", "cnn_unavailable", "cnn_invalid", "cnn_inference_error"}
     family = prediction.club_type
+    requires_marking = family in {"Iron", "Wedge"}
     marking: Optional[ClubMarkingResult] = None
     predicted = family
     confidence = prediction.confidence
     ocr_payload = None
 
-    if family in {"Iron", "Wedge"} and prediction.source not in unavailable_sources:
-        marking = classify_club_marking(image, family, config)
+    if requires_marking and prediction.source not in unavailable_sources:
+        marking = classify_iron_or_wedge_marking(image, config)
         ocr_payload = _ocr_payload(marking)
         if marking.exact_club:
+            family = marking.exact_club
             predicted = marking.exact_club
             confidence = (0.55 * prediction.confidence) + (0.45 * marking.confidence)
 
     if prediction.source in unavailable_sources:
         status = "unavailable"
-    elif family in {"Iron", "Wedge"} and (marking is None or not marking.exact_club):
+    elif requires_marking and (marking is None or not marking.exact_club):
         status = "marking_unavailable" if marking and marking.source in _OCR_UNAVAILABLE_SOURCES else "needs_marking"
     elif predicted and confidence >= confirm_threshold:
         status = "confirmed"
@@ -285,6 +287,94 @@ def classify_broad_category(image: Image.Image, config: Dict) -> BroadCategoryRe
 
 
 _OCR_UNAVAILABLE_SOURCES = {"ocr_unavailable", "ocr_unsupported_backend", "ocr_inference_error"}
+
+
+def classify_iron_or_wedge_marking(image: Image.Image, config: Dict) -> ClubMarkingResult:
+    """Resolve only the Iron-versus-Wedge decision from the OCR marking."""
+
+    settings = config.get("club_recognition", {}) or {}
+    ocr_settings = settings.get("marking_ocr", {}) or {}
+    minimum_confidence = _bounded_confidence(ocr_settings.get("min_confidence", 0.70))
+
+    first_pass = read_marking_candidates(image, config, rotations=(0,))
+    result = _select_iron_or_wedge_candidate(first_pass, minimum_confidence)
+    if result.exact_club or first_pass.source in _OCR_UNAVAILABLE_SOURCES:
+        return result
+
+    if not bool(ocr_settings.get("try_sideways_rotations_on_failure", True)):
+        return result
+
+    sideways_pass = read_marking_candidates(image, config, rotations=(90, 270))
+    combined = OcrReadResult(
+        candidates=first_pass.candidates + sideways_pass.candidates,
+        source=sideways_pass.source if sideways_pass.source != "rapidocr" else first_pass.source,
+        reasoning=join_reasoning([first_pass.reasoning, sideways_pass.reasoning]),
+        elapsed_ms=first_pass.elapsed_ms + sideways_pass.elapsed_ms,
+        attempts=first_pass.attempts + sideways_pass.attempts,
+    )
+    return _select_iron_or_wedge_candidate(combined, minimum_confidence)
+
+
+def _select_iron_or_wedge_candidate(
+    ocr_result: OcrReadResult,
+    minimum_confidence: float,
+) -> ClubMarkingResult:
+    valid: list[tuple[OcrCandidate, str, str]] = []
+    below_threshold: list[tuple[OcrCandidate, str, str]] = []
+
+    for candidate in ocr_result.candidates:
+        normalized = normalize_iron_or_wedge_marking(candidate.text)
+        if normalized is None:
+            continue
+        designation, category = normalized
+        item = (candidate, designation, category)
+        if candidate.confidence >= minimum_confidence:
+            valid.append(item)
+        else:
+            below_threshold.append(item)
+
+    if valid:
+        candidate, designation, category = max(valid, key=lambda item: item[0].confidence)
+        return ClubMarkingResult(
+            designation=designation,
+            exact_club=category,
+            raw_text=candidate.text,
+            confidence=candidate.confidence,
+            bbox=candidate.bbox,
+            reasoning=None,
+            source=ocr_result.source,
+            elapsed_ms=ocr_result.elapsed_ms,
+            attempts=ocr_result.attempts,
+        )
+
+    if below_threshold:
+        candidate, designation, category = max(below_threshold, key=lambda item: item[0].confidence)
+        return ClubMarkingResult(
+            designation=None,
+            exact_club=None,
+            raw_text=candidate.text,
+            confidence=candidate.confidence,
+            bbox=candidate.bbox,
+            reasoning=(
+                f"OCR read {candidate.text!r} as {designation!r} ({category}), but its confidence "
+                f"({candidate.confidence:.2f}) is below the {minimum_confidence:.2f} threshold."
+            ),
+            source=ocr_result.source,
+            elapsed_ms=ocr_result.elapsed_ms,
+            attempts=ocr_result.attempts,
+        )
+
+    return ClubMarkingResult(
+        designation=None,
+        exact_club=None,
+        raw_text=ocr_result.candidates[0].text if ocr_result.candidates else None,
+        confidence=max((candidate.confidence for candidate in ocr_result.candidates), default=0.0),
+        bbox=ocr_result.candidates[0].bbox if ocr_result.candidates else None,
+        reasoning=ocr_result.reasoning or "No readable marking matched the Iron-or-Wedge rule.",
+        source=ocr_result.source,
+        elapsed_ms=ocr_result.elapsed_ms,
+        attempts=ocr_result.attempts,
+    )
 
 
 def classify_club_marking(image: Image.Image, family: str, config: Dict) -> ClubMarkingResult:
@@ -546,6 +636,30 @@ def _normalize_club_marking_legacy(label: Optional[str], family: str) -> Optiona
     degree_match = re.fullmatch(r"(?:wedge_?)?(4[6-9]|5[0-9]|6[0-4])(?:_?deg(?:ree)?)?", normalized)
     if family == "Wedge" and degree_match:
         return f"{degree_match.group(1)}° Wedge"
+    return None
+
+
+def normalize_iron_or_wedge_marking(label: Optional[str]) -> Optional[tuple[str, str]]:
+    """Normalize a club marking using the app's Iron-versus-Wedge rule."""
+
+    if label is None:
+        return None
+    compact = re.sub(r"[^A-Z0-9]", "", str(label).upper())
+    if not compact:
+        return None
+
+    if compact in {"P", "PW", "G", "GW", "A", "AW", "S", "SW"}:
+        return compact, "Iron"
+
+    numeric_text = compact.removeprefix("LOFT").removesuffix("DEGREES").removesuffix("DEG")
+    if not re.fullmatch(r"\d+", numeric_text):
+        return None
+
+    number = int(numeric_text)
+    if 1 <= number <= 9:
+        return str(number), "Iron"
+    if number > 10:
+        return str(number), "Wedge"
     return None
 
 
