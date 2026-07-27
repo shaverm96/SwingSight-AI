@@ -108,18 +108,18 @@ For the most useful review:
 
 | KPI | What it measures |
 | --- | --- |
-| **Overall Swing Score** | A 0–100 summary of the available movement, posture, timing, and balance signals. It is most useful for comparing similar recordings over time. |
+| **Overall Swing Score** | A 0â€“100 summary of the available movement, posture, timing, and balance signals. It is most useful for comparing similar recordings over time. |
 | **Kinematic Sequence** | How efficiently the pelvis, torso, arms, and club appear to accelerate and decelerate in order. |
-| **X-Factor Separation** | The rotational difference between the hips and shoulders near the top of the backswing—the coil that can contribute to speed. |
+| **X-Factor Separation** | The rotational difference between the hips and shoulders near the top of the backswingâ€”the coil that can contribute to speed. |
 | **Spine Angle Maintenance** | How consistently posture and spinal tilt are held from address through impact. |
 | **Lateral Weight Shift** | How body position and pressure move toward the lead side while avoiding excessive sway or thrust. |
 
 Status labels are color coded in the dashboard:
 
-- **On Track / Strong** — green
-- **Developing** — amber
-- **Needs Work / Needs Practice** — red
-- **More Data** — gray
+- **On Track / Strong** â€” green
+- **Developing** â€” amber
+- **Needs Work / Needs Practice** â€” red
+- **More Data** â€” gray
 
 These are directional coaching signals, not laboratory-grade biomechanics measurements.
 
@@ -129,8 +129,8 @@ SwingSight classifies the submitted club image with a staged recognition workflo
 
 ~~~text
 Five-way classification: Driver | Wood | Hybrid | Iron | Wedge
-       ↓
-Optional exact marking: 1–9, P/A/G/S/L, or a wedge loft
+       â†“
+Optional exact marking: 1â€“9, P/A/G/S/L, or a wedge loft
 ~~~
 
 The app first runs the existing five-way classifier. Driver, Wood, and Hybrid keep the existing behavior and never invoke OCR. For an Iron or Wedge, the app passes the complete uploaded image to a pretrained text detector and reader, then accepts only valid golf-club markings.
@@ -142,11 +142,11 @@ Required local model/runtime files:
 ~~~text
 models/
   trained/
-    club_type_5way.pt               # ResNet-101 five-way classifier after retraining
+    club_type_5way.pt               # ResNet-50 five-way classifier after retraining
     club_type_5way_cnn.pt           # compact CNN five-way reference classifier
 ~~~
 
-The runtime uses the configured five-way checkpoint and can fall back to the compact `club_type_5way_cnn.pt` reference classifier when available. The inference loader remains compatible with earlier MobileNetV3-Small checkpoints, but the updated training notebook creates a ResNet-101 checkpoint and requires a CUDA-capable GPU to train practically. `rapidocr` and `onnxruntime` are installed by `requirements.txt`. The default backend is RapidOCR with PP-OCR small models; change `club_recognition.marking_ocr.backend` if a compatible replacement reader is added later. The current reader supports Iron numbers `2` through `9`, wedge labels `P/PW`, `A/AW`, `G/GW`, `S/SW`, and `L/LW`, plus recognized lofts from `46` to `64` degrees. It normalizes common OCR swaps such as `S`/`5`, `G`/`6`, `B`/`8`, `O`/`0`, and `I`/`1` only when the result is valid for the detected club family.
+The runtime uses the configured five-way checkpoint and can fall back to the compact `club_type_5way_cnn.pt` reference classifier when available. The inference loader remains compatible with earlier MobileNetV3-Small checkpoints, but the updated training notebook creates a ResNet-50 checkpoint and requires a CUDA-capable GPU to train practically. `rapidocr` and `onnxruntime` are installed by `requirements.txt`. The default backend is RapidOCR with PP-OCR small models; change `club_recognition.marking_ocr.backend` if a compatible replacement reader is added later. The current reader supports Iron numbers `2` through `9`, wedge labels `P/PW`, `A/AW`, `G/GW`, `S/SW`, and `L/LW`, plus recognized lofts from `46` to `64` degrees. It normalizes common OCR swaps such as `S`/`5`, `G`/`6`, `B`/`8`, `O`/`0`, and `I`/`1` only when the result is valid for the detected club family.
 
 The default exact-marking threshold is `0.70` (`club_recognition.marking_ocr.min_confidence`). A reading below that threshold, an invalid label, unavailable OCR runtime, or no text leaves the category as Iron or Wedge and returns `exact_club: null`; the application does not guess. Inspect `club_details` in the analysis response for `club_type`, `club_number`, `exact_club`, OCR confidence, source, and the text box.
 
@@ -177,11 +177,11 @@ The `marking_*` columns remain for historical experiments; they are not needed f
 - **split:** train or val
 - **five_way_label:** driver, wood, hybrid, iron, or wedge
 - **marking_***: normalized bounding box around the readable number, letter, or loft
-- **marking_label:** one of 1–9, p/a/g/s/l, or loft labels 50/52/54/56/58/60
+- **marking_label:** one of 1â€“9, p/a/g/s/l, or loft labels 50/52/54/56/58/60
 
 Train the five-way classifier when the broad club detector needs improvement:
 
-1. **notebooks/03_train_five_way_club_cnn.ipynb** creates `models/trained/club_type_5way.pt` with a ResNet-101 classifier.
+1. **notebooks/03_train_five_way_club_cnn.ipynb** creates `models/trained/club_type_5way.pt` with a ResNet-50 classifier.
 
 Keep images from a single source capture in one split only. Otherwise, nearly identical images can appear in both training and validation, which gives misleadingly strong results.
 
@@ -210,23 +210,23 @@ python src/run.py
 
 ~~~text
 SwingSight-AI/
-├── Launch SwingSight.bat          # Windows launcher
-├── SwingSight.app/                # macOS launcher
-├── config.example.yaml            # configuration reference
-├── requirements.txt               # runtime and test dependencies
-├── src/
-│   ├── run.py                     # Flask entry point
-│   ├── backend/                   # analysis and coaching services
-│   ├── swingsight/                # configuration and vision utilities
-│   └── webapp/                    # dashboard routes, templates, and assets
-├── notebooks/                     # model-training notebooks
-├── scripts/                       # launcher and training support
-├── models/                        # reference and locally trained checkpoints
-├── data/                          # local working and training data
-├── uploads/                       # videos created at runtime
-├── outputs/                       # overlays and analysis outputs
-├── reports/                       # generated reports
-└── tests/                         # automated checks
+â”œâ”€â”€ Launch SwingSight.bat          # Windows launcher
+â”œâ”€â”€ SwingSight.app/                # macOS launcher
+â”œâ”€â”€ config.example.yaml            # configuration reference
+â”œâ”€â”€ requirements.txt               # runtime and test dependencies
+â”œâ”€â”€ src/
+â”‚   â”œâ”€â”€ run.py                     # Flask entry point
+â”‚   â”œâ”€â”€ backend/                   # analysis and coaching services
+â”‚   â”œâ”€â”€ swingsight/                # configuration and vision utilities
+â”‚   â””â”€â”€ webapp/                    # dashboard routes, templates, and assets
+â”œâ”€â”€ notebooks/                     # model-training notebooks
+â”œâ”€â”€ scripts/                       # launcher and training support
+â”œâ”€â”€ models/                        # reference and locally trained checkpoints
+â”œâ”€â”€ data/                          # local working and training data
+â”œâ”€â”€ uploads/                       # videos created at runtime
+â”œâ”€â”€ outputs/                       # overlays and analysis outputs
+â”œâ”€â”€ reports/                       # generated reports
+â””â”€â”€ tests/                         # automated checks
 ~~~
 
 Videos, generated outputs, model checkpoints, virtual environments, and .env files should stay local unless you explicitly intend to version them.
@@ -298,7 +298,7 @@ Then restart SwingSight.
 
 - SwingSight is intended to run locally on your computer.
 - Uploaded videos, generated overlays, reports, and model artifacts are local project data.
-- With Gemini enabled, the default configuration is designed to send structured local coaching measurements—not the source video, raw frames, file paths, or debug artifacts.
+- With Gemini enabled, the default configuration is designed to send structured local coaching measurementsâ€”not the source video, raw frames, file paths, or debug artifacts.
 - Keep .env files, API keys, and personal swing videos out of public repositories.
 
 ## License and contributions
