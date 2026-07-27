@@ -27,6 +27,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "min_detection_confidence": 0.3,
         "min_presence_confidence": 0.3,
         "crop_scale": 5.5,
+        "max_crop_fraction": 0.75,
         "merge_ratio": 1.5,
     },
     "club_recognition": {

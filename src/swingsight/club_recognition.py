@@ -66,6 +66,7 @@ def recognize_club_from_frame(image_path: str, config: Dict) -> Dict:
                 min_detection_confidence=float(localization_settings.get("min_detection_confidence", 0.3)),
                 min_presence_confidence=float(localization_settings.get("min_presence_confidence", 0.3)),
                 crop_scale=float(localization_settings.get("crop_scale", 5.5)),
+                max_crop_fraction=float(localization_settings.get("max_crop_fraction", 0.75)),
                 merge_ratio=float(localization_settings.get("merge_ratio", 1.5)),
             )
         except Exception as error:

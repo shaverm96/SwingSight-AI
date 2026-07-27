@@ -24,6 +24,10 @@ club_localization:
   min_detection_confidence: 0.3
   min_presence_confidence: 0.3
   crop_scale: 5.5
+  # Caps the crop at this fraction of the frame's shorter side so a hand
+  # that is already large/close to the camera cannot make the "crop"
+  # degenerate into the full, uncropped photo.
+  max_crop_fraction: 0.75
   merge_ratio: 1.5
 
 club_recognition:

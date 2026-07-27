@@ -47,6 +47,13 @@ DEFAULT_MIN_PRESENCE_CONFIDENCE = 0.3
 # ~50px inside a 288px crop that fully framed the club head (288/50 ~= 5.8).
 # Treat this as a starting point -- tune against real captures.
 DEFAULT_CROP_SCALE = 5.5
+# Upper bound on the crop side, as a fraction of the frame's shorter side.
+# Without this, a hand that is already large in frame (close to the camera)
+# makes crop_scale * hand_size exceed the image entirely, so the "crop"
+# silently degenerates into the full, uncropped photo -- confirmed against a
+# real capture where a close-up open palm produced a 330px-wide hand bbox in
+# a ~490px-tall frame, and 5.5x that (~1800px) clipped to the whole image.
+DEFAULT_MAX_CROP_FRACTION = 0.75
 # If two hands are detected, merge them into one crop when their centers are
 # closer together than this multiple of the larger hand's size (two-handed
 # grip); otherwise the larger/closer-looking hand is used alone.
@@ -93,6 +100,7 @@ def locate_club_crop(
     min_detection_confidence: float = DEFAULT_MIN_DETECTION_CONFIDENCE,
     min_presence_confidence: float = DEFAULT_MIN_PRESENCE_CONFIDENCE,
     crop_scale: float = DEFAULT_CROP_SCALE,
+    max_crop_fraction: float = DEFAULT_MAX_CROP_FRACTION,
     merge_ratio: float = DEFAULT_MERGE_RATIO,
 ) -> ClubCropResult:
     """Crop ``image`` tightly around a detected hand -- no body or stance required.
@@ -151,6 +159,7 @@ def locate_club_crop(
             reasoning = "Cropped around the detected hand."
 
         side = max(48.0, crop_scale * hand_size)
+        side = min(side, max_crop_fraction * min(rgb.width, rgb.height))
         left_bound = int(max(0, center[0] - side / 2))
         top_bound = int(max(0, center[1] - side / 2))
         right_bound = int(min(rgb.width, center[0] + side / 2))
