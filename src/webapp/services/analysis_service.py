@@ -10,7 +10,7 @@ from uuid import uuid4
 from flask import current_app
 
 from webapp.services.gemini_coaching_service import GeminiCoachingService
-from webapp.services.report_service import generate_pdf_report, generate_word_report
+from webapp.services.report_service import generate_pdf_report
 from webapp.utils.storage import ensure_dir
 
 
@@ -216,16 +216,11 @@ class AnalysisService:
         self._results[analysis_id] = result
         return result
 
-    def generate_report(self, analysis_id: str, report_format: str) -> Optional[str]:
+    def generate_report(self, analysis_id: str) -> Optional[str]:
         result = self.get_result(analysis_id)
         if result is None:
             return None
-
-        if report_format == "pdf":
-            return generate_pdf_report(result, str(self.reports_dir))
-        if report_format == "docx":
-            return generate_word_report(result, str(self.reports_dir))
-        return None
+        return generate_pdf_report(result, str(self.reports_dir))
 
     def _persist_result(self, analysis_id: str, result: Dict) -> None:
         file_path = self.outputs_dir / f"analysis_{analysis_id}.json"

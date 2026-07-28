@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}?v=20260723-coach-priority" />
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}?v=20260727-pdf-report" />
   </head>
   <body>
     <div class="page-shell review-page" data-analysis-id="{{ analysis_id }}">
@@ -67,7 +67,7 @@
 
         <section class="report-section">
           <div><p class="eyebrow">Take it with you</p><h2>Save this review for your next session.</h2><p>Download a clean coach-style summary of this swing.</p></div>
-          <div class="results-actions"><button id="downloadPdfButton" class="button ghost">Download PDF</button><button id="downloadDocxButton" class="button ghost">Download Word</button></div>
+          <div class="results-actions"><button id="downloadPdfButton" class="button primary report-download-button" type="button"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 3v12m0 0-4.5-4.5M12 15l4.5-4.5M5 18v3h14v-3" /></svg>Download PDF Report</button></div>
         </section>
 
         <details class="advanced-details"><summary>Advanced details</summary><div class="advanced-grid"><article><h3>Metrics</h3><pre id="advancedMetrics" class="output-box"></pre></article><article><h3>Tracking</h3><pre id="advancedTracking" class="output-box"></pre></article><article><h3>Model outputs</h3><pre id="advancedModels" class="output-box"></pre></article></div></details>
@@ -75,6 +75,6 @@
     </div>
     <div id="overlayModal" class="overlay-modal hidden" aria-hidden="true"><div class="overlay-modal__backdrop"></div><section class="overlay-modal__panel" role="dialog" aria-modal="true" aria-label="Expanded overlay viewer"><div class="overlay-modal__head"><div><p class="eyebrow">Expanded view</p><h2>Overlay viewer</h2></div><button id="closeOverlayModalButton" class="button ghost" type="button">Close</button></div><div class="overlay-modal__toolbar"><div class="toggle-group" role="group" aria-label="Expanded video view toggle"><button id="modalOriginalButton" class="button toggle is-active" type="button">Original</button><button id="modalOverlayButton" class="button toggle" type="button">Overlay</button></div></div><video id="overlayModalPreview" class="overlay-modal__video" controls playsinline preload="auto"></video></section></div>
     <div id="kpiInfoModal" class="kpi-info-modal hidden" aria-hidden="true"><div class="kpi-info-modal__backdrop"></div><section class="kpi-info-modal__panel" role="dialog" aria-modal="true" aria-labelledby="kpiInfoTitle"><div class="kpi-info-modal__head"><div><p class="eyebrow">Swing KPI</p><h2 id="kpiInfoTitle">Metric description</h2></div><button id="closeKpiInfoButton" class="button ghost" type="button">Close</button></div><p id="kpiInfoDescription" class="kpi-info-modal__description"></p><p class="kpi-info-modal__note">This is a side-view, 2D video estimate. Camera angle and framing can affect the reading.</p></section></div>
-    <script src="{{ url_for('static', filename='js/analysis.js') }}?v=20260723-coach-priority"></script>
+    <script src="{{ url_for('static', filename='js/analysis.js') }}?v=20260727-pdf-only"></script>
   </body>
 </html>

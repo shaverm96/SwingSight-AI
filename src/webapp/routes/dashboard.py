@@ -205,9 +205,7 @@ def analysis_assets(analysis_id: str) -> Response:
 
 @dashboard_bp.post("/api/reports/<analysis_id>")
 def create_report(analysis_id: str) -> Response:
-    payload = request.get_json(silent=True) or {}
-    report_format = payload.get("format", "pdf")
-    report_path = _service().generate_report(analysis_id, report_format)
+    report_path = _service().generate_report(analysis_id)
 
     if report_path is None:
         return jsonify({"error": "unable to generate report"}), 400
@@ -215,9 +213,8 @@ def create_report(analysis_id: str) -> Response:
     report_file = Path(report_path)
     return jsonify(
         {
-            "report_path": str(report_file),
             "download_url": f"/reports/{report_file.name}",
-            "format": report_format,
+            "format": "pdf",
         }
     )
 
@@ -245,5 +242,7 @@ def output_file(filename: str) -> Response:
 
 @dashboard_bp.get("/reports/<path:filename>")
 def report_file(filename: str) -> Response:
+    if Path(filename).suffix.lower() != ".pdf":
+        return jsonify({"error": "PDF report not found"}), 404
     service = _service()
     return send_from_directory(service.reports_dir, filename, as_attachment=True)

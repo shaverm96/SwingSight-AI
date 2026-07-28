@@ -30,7 +30,6 @@ const overlayViewButton = document.getElementById("overlayViewButton");
 const visualizationStatus = document.getElementById("visualizationStatus");
 const downloadOverlayButton = document.getElementById("downloadOverlayButton");
 const downloadPdfButton = document.getElementById("downloadPdfButton");
-const downloadDocxButton = document.getElementById("downloadDocxButton");
 const advancedMetrics = document.getElementById("advancedMetrics");
 const advancedTracking = document.getElementById("advancedTracking");
 const advancedModels = document.getElementById("advancedModels");
@@ -67,8 +66,7 @@ overlayModal.addEventListener("click", (event) => {
     closeOverlayModal();
   }
 });
-downloadPdfButton.addEventListener("click", () => requestReport("pdf"));
-downloadDocxButton.addEventListener("click", () => requestReport("docx"));
+downloadPdfButton?.addEventListener("click", requestPdfReport);
 
 loadReview();
 
@@ -417,12 +415,12 @@ function setModalMode(mode) {
   modalOverlayButton.disabled = !state.overlayVideoUrl;
 }
 
-async function requestReport(format) {
+async function requestPdfReport() {
   try {
+    downloadPdfButton.disabled = true;
+    downloadPdfButton.setAttribute("aria-busy", "true");
     const response = await fetch(`/api/reports/${encodeURIComponent(analysisId)}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ format }),
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.error || "Report generation failed.");
@@ -430,6 +428,9 @@ async function requestReport(format) {
   } catch (error) {
     console.error(error);
     reviewStatus.textContent = error.message || "Unable to generate report";
+  } finally {
+    downloadPdfButton.disabled = false;
+    downloadPdfButton.removeAttribute("aria-busy");
   }
 }
 
