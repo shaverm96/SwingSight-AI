@@ -52,9 +52,10 @@ button:focus-visible, select:focus-visible, a:focus-visible {
 
 .welcome-card {
   position: relative;
-  min-height: clamp(450px, 38vw, 620px);
+  height: clamp(480px, 31vw, 636px);
+  min-height: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1.72fr) minmax(390px, 0.86fr);
+  grid-template-columns: minmax(0, 1.64fr) minmax(410px, 0.92fr);
   overflow: hidden;
   border: 1px solid rgba(17, 54, 26, 0.06);
   border-radius: 36px;
@@ -63,7 +64,7 @@ button:focus-visible, select:focus-visible, a:focus-visible {
     linear-gradient(135deg, rgba(255,255,255,.97), rgba(246,250,245,.88));
   box-shadow: 0 20px 52px rgba(27, 54, 31, 0.11);
 }
-.welcome-card::after { content: ""; position: absolute; z-index: 0; width: 76%; height: 76%; right: 29%; bottom: -43%; pointer-events: none; opacity: .46; transform: rotate(-8deg); background: repeating-radial-gradient(ellipse at 45% 100%, transparent 0 19px, rgba(72, 193, 83, .12) 20px 21px, transparent 22px 34px); }
+.welcome-card::after { content: ""; position: absolute; z-index: 0; width: 76%; height: 76%; right: 29%; bottom: -43%; pointer-events: none; opacity: .22; transform: rotate(-8deg); background: repeating-radial-gradient(ellipse at 45% 100%, transparent 0 19px, rgba(72, 193, 83, .12) 20px 21px, transparent 22px 34px); }
 .welcome-copy { position: relative; z-index: 1; display: flex; flex-direction: column; justify-content: center; padding: clamp(45px, 5.25vw, 85px); }
 .eyebrow, .card-kicker { margin: 0; color: #657267; font-size: 0.71rem; font-weight: 800; letter-spacing: 0.105em; text-transform: uppercase; }
 .welcome-copy .eyebrow { position: relative; margin-bottom: 28px; color: #169440; font-size: clamp(.71rem, 1vw, .88rem); }
@@ -187,7 +188,7 @@ button:focus-visible, select:focus-visible, a:focus-visible {
 
 @media (max-width: 900px) {
   .welcome-card, .results-grid { grid-template-columns: 1fr; }
-  .welcome-card { min-height: 0; }
+  .welcome-card { height: auto; min-height: 0; }
   .swing-today { min-height: 260px; margin: 0 30px 30px; border-radius: 28px; }
 }
 @media (max-width: 680px) {
