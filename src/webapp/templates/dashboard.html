@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}?v=20260727-exact-club" />
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}?v=20260727-hero" />
   </head>
   <body>
     <div class="page-shell start-page">
@@ -20,14 +20,14 @@
         <section class="welcome-card">
           <div class="welcome-copy">
             <p class="eyebrow">Your personal swing coach</p>
-            <h1>A clearer swing,<br /><span>one shot at a time.</span></h1>
+            <h1>Better swings.<br /><span>Real progress.</span></h1>
             <p class="lead">Record a swing on the range or bring in a video. We’ll turn it into simple, useful feedback.</p>
-            <div class="quick-steps" aria-label="How it works"><span><b>1</b> Capture</span><span><b>2</b> Analyze</span><span><b>3</b> Improve</span></div>
+            <div class="quick-steps" aria-label="How it works"><span><b>1</b><i aria-hidden="true">●</i> Capture</span><span><b>2</b><i aria-hidden="true">▮</i> Analyze</span><span><b>3</b><i aria-hidden="true">★</i> Improve</span></div>
           </div>
           <aside class="swing-today">
             <p class="eyebrow">Ready to review</p>
-            <p class="today-score"><strong>01</strong><span>swing at a time</span></p>
-            <div class="today-meta"><span>Time needed <strong>Less than 1 min</strong></span><span>Feedback <strong>Motion + coaching</strong></span></div>
+            <div class="review-swing-status"><div class="swing-orbit" aria-hidden="true"><span>⌁</span></div><div><strong>Swing<br />in progress</strong><span>One shot at a time.</span></div></div>
+            <div class="today-meta"><span><i aria-hidden="true">◷</i> Time needed <strong>Less than 1 min</strong></span><span><i aria-hidden="true">↗</i> Feedback <strong>Motion + coaching</strong></span></div>
           </aside>
         </section>
         <section class="action-section" aria-labelledby="actionHeading">
