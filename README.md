@@ -1,47 +1,347 @@
 # SwingSight AI
 
-SwingSight AI is a local-first golf swing-analysis application. It turns a short uploaded or recorded swing video into a motion review, five key performance indicators (KPIs), an overall Swing Score, and practical coach-style feedback.
+SwingSight AI is a local-first golf swing coaching application. It accepts a short swing video from a camera roll or a live browser recording, analyzes body movement from the video, identifies the club when possible, and turns the result into a practical review with motion overlays, KPI rankings, coaching guidance, and a downloadable PDF report.
 
-The application is built for real practice sessions: run it on your computer, upload a clear swing video, and review the result in your browser. Gemini coaching is optional; local video analysis and local coaching continue to work without an API key.
+The product is designed for a practice session: upload or record a swing, let the local analysis run, then review one clear priority and take a coach-style cue to the next ball.
 
-> **Project status:** Active development. SwingSight supports practice and video review; it is not a substitute for an in-person PGA professional, medical, or injury assessment.
+> SwingSight provides video-based practice guidance, not medical advice, an injury assessment, a launch-monitor replacement, or a substitute for instruction from a qualified golf professional.
 
-## Highlights
+## Contents
 
-- Local web dashboard for swing upload and camera capture
-- Pose-based movement analysis with a rendered swing overlay
-- Five golfer-friendly KPI rankings: Overall Swing Score, Kinematic Sequence, X-Factor Separation, Spine Angle Maintenance, and Lateral Weight Shift
-- Coach-style feedback with one priority and three detailed observations
-- Optional Gemini-enhanced narrative coaching based on local CV measurements
-- Club-recognition support for Driver, Wood, Hybrid, Iron, and Wedge
-- Optional exact iron/wedge marking recognition after five-way classification
-- Windows launcher that creates a virtual environment, installs requirements, and opens the application in the default browser
-- Training notebook for five-way club classification; exact Iron/Wedge markings use pretrained OCR
+- [What SwingSight does](#what-swingsight-does)
+- [How a swing moves through the system](#how-a-swing-moves-through-the-system)
+- [Using the app](#using-the-app)
+- [Review and PDF report](#review-and-pdf-report)
+- [Club selection and recognition](#club-selection-and-recognition)
+- [Movement analysis and KPIs](#movement-analysis-and-kpis)
+- [Optional Gemini coaching](#optional-gemini-coaching)
+- [Install and run](#install-and-run)
+- [Configuration](#configuration)
+- [Local API](#local-api)
+- [Storage, privacy, and security](#storage-privacy-and-security)
+- [Models, data, and training](#models-data-and-training)
+- [Development and testing](#development-and-testing)
+- [Troubleshooting](#troubleshooting)
 
-## Quick start
+## What SwingSight does
 
-### Windows
+### Landing page and capture choices
 
-1. Download or clone this repository.
+The local web app opens to a minimal SwingSight landing page, then offers two capture paths farther down the page:
+
+1. **Upload a swing**
+   - Accepts a browser-supported video file (`video/*`). MP4, MOV, and WebM are the intended common formats.
+   - Requires the golfer to select a club family before choosing a video.
+   - For an Iron or Wedge, the UI also asks for the exact club marking or loft.
+
+2. **Record a swing**
+   - Opens the browser camera through `getUserMedia`.
+   - Runs a short countdown, captures a frame for club recognition, checks that the golfer's body is visible, then records a 5.5-second WebM clip.
+   - Uses the detected club when recognition is confident enough.
+
+Both paths show a staged in-browser progress sheet while the video is uploaded, analyzed, and prepared for review.
+
+### Analysis and coaching
+
+For a readable swing video, SwingSight can produce:
+
+- Original-video playback and a selectable pose-overlay video.
+- Raw and smoothed overlay variants, plus diagnostic assets when the local pipeline creates them.
+- A Swing Score, score label, and five player-facing KPI cards.
+- A detected or user-selected club.
+- A single next-best coaching focus.
+- Strengths, improvements, practice cues, coaching observations, and optional drills.
+- Advanced metrics, tracking metadata, warnings, and model outputs for local inspection.
+
+If pose tracking, an overlay encoder, or club recognition is unavailable, the result records the limitation and continues where a useful fallback is possible. A missing or weak reading should be treated as unavailable data, not as a statement about swing quality.
+
+### Branded PDF export
+
+The completed review exposes one export action: **Download PDF Report**. SwingSight does not generate or offer Word documents.
+
+The export is a two-page coaching report with:
+
+- SwingSight branding, analysis date, detected club, and a short support ID in the footer.
+- A score card with a consistent score status.
+- Coach's Take, genuine strengths, next focus, practice cue, and numbered priorities.
+- Key movement scores and readable, rounded movement measurements.
+- Safe handling for `None`, `NaN`, infinity, suspicious zero values, duplicate values, and raw/internal metric names.
+- Page numbers, a practice-guidance disclaimer, and a PDF filename based on the club, such as `SwingSight_8-Iron_Swing_Report.pdf`.
+
+## How a swing moves through the system
+
+```text
+Browser upload or live recording
+        |
+        +-- optional exact club selection (upload)
+        |       or club scan + body visibility check (recording)
+        v
+Flask upload routes save local media
+        v
+ModelManager validates the video and runs local pose analysis
+        |
+        +-- YOLO pose inference when the local runtime/model is available
+        +-- fallback-frame extraction and local warnings when it is not
+        +-- raw and smoothed overlay generation
+        +-- club recognition from a frame or submitted club image
+        v
+Movement metrics + CoachingEngine
+        |
+        +-- local score, strengths, improvements, focus, observations
+        +-- optional Gemini coaching from structured local measurements only
+        v
+Persisted JSON result in outputs/
+        v
+Browser review page + optional two-page PDF report in reports/
+```
+
+The application is intentionally local-first. The Flask server, files, model inference, overlays, local score, and baseline coaching run on the computer hosting the app. Gemini is the only optional remote service, and it receives structured measurement evidence rather than the source video or raw frames.
+
+## Using the app
+
+1. Start SwingSight and visit `http://127.0.0.1:8000`.
+2. Select **Upload a swing** or **Record a swing**.
+3. For uploads, choose the club family. If it is an Iron or Wedge, choose the exact number, letter, or loft shown on the club.
+4. For live capture, hold the club face or sole clearly in the camera during the countdown. After club confirmation, step back so the full body is visible.
+5. Record or choose one short swing video.
+6. Wait for the review page to open.
+7. Compare the original video with the overlay, read the coaching priority, inspect KPI rankings and practice guidance, then download the PDF report if needed.
+
+### Recording recommendations
+
+For the most useful review:
+
+- Use one swing per clip.
+- Keep the golfer, hands, club, and both feet in frame from setup through finish.
+- Record from a stable face-on or down-the-line/side view; keep that angle consistent when comparing swings.
+- Put the camera roughly waist or hip height and avoid zooming or hand-held movement.
+- Use good light and enough contrast between the golfer and background.
+- Show a clean, centered club face or sole when club identification matters.
+- Keep the clip short. The example configuration uses a 12-second maximum-video target, and shorter clips are faster to inspect and process.
+
+## Review and PDF report
+
+### Review page
+
+The review page contains:
+
+- **KPI rankings:** five visual score cards for the core movement measures.
+- **Swing score:** an overall 0-100 score when the available local evidence supports one.
+- **Original / Overlay controls:** switches between the uploaded video and the preferred smoothed overlay when it is available.
+- **Coach's priority:** the most useful next movement to practice.
+- **What I'm seeing:** up to three coach observations.
+- **Keep doing / Work on this / Practice cues:** short lists sourced from local or Gemini coaching.
+- **Practice plan:** up to three drill cards when drill data is available.
+- **Advanced details:** local diagnostic JSON for metrics, tracking, model outputs, and detailed coaching. This section is for development and troubleshooting rather than a player-facing scorecard.
+
+The review page also includes **Record new swing**, which opens the capture workflow directly with `/?record=1`.
+
+### PDF report details
+
+The PDF generator in `src/webapp/services/report_service.py` creates exactly two Letter-size pages under normal conditions.
+
+**Page 1 - Swing Analysis Report**
+
+- SwingSight wordmark, date, club, and AI-powered coaching label.
+- Swing Score, score status, detected club, and primary focus.
+- Coach's Take.
+- Up to three evidence-supported strengths. If no reliable strength is available, the report uses the clearly labeled “Building Your Foundation” fallback rather than inventing a positive observation.
+- A visually prominent next-focus card with explanation and practice cue.
+- Up to three improvement-priority cards. Each card contains what was observed, why it matters, and a simple swing thought.
+
+**Page 2 - Swing Details**
+
+- A plain-language measurement disclaimer.
+- Available normalized scores for Kinematic Sequence, Lateral Weight Shift, Spine Maintenance, and X-Factor.
+- A compact Measured Movement table for useful measurements such as spine angle, shoulder rotation, head/hip/knee movement, foot stability, hand path, and lateral-shift ratio.
+- Rounded values with units: degrees to one decimal place, pixels to whole numbers, ratios to two decimal places, and scores as whole numbers out of 100.
+
+The report deliberately hides invalid, missing, non-finite, internal-only, and suspicious data instead of exposing Python values or debugging output. The full analysis UUID is not printed in the report body; only a short support ID may appear in the footer.
+
+## Club selection and recognition
+
+SwingSight supports five broad club families:
+
+| Family | Upload selection | Live recognition behavior |
+| --- | --- | --- |
+| Driver | Driver | Five-way classifier result |
+| Wood | Fairway Wood | Five-way classifier result |
+| Hybrid | Hybrid | Five-way classifier result |
+| Iron | Iron, then `1-9`, `P`, `G`, `A`, or `S` | Five-way classifier, then OCR marking read where possible |
+| Wedge | Wedge, then `46`, `48`, `50`, `52`, `54`, `56`, `58`, `60`, `62`, or `64` | Five-way classifier, then OCR marking or loft read where possible |
+
+### Uploaded swings
+
+The upload flow deliberately uses the club chosen in the UI. This avoids making club type a gating condition for the main video analysis and allows a golfer to choose an exact club such as `8 Iron` or `60 Wedge` even if no separate club photo is available.
+
+### Live club scanning
+
+For live recording, SwingSight captures a still frame before recording and uses the following staged workflow:
+
+```text
+Hand-based crop when a hand is detected
+        v
+Adaptive contrast preprocessing
+        v
+Five-way CNN: Driver | Wood | Hybrid | Iron | Wedge
+        v
+Only for Iron/Wedge: full-image RapidOCR marking read
+        v
+Confirmed exact club, broad family, or a clear retry message
+```
+
+The hand crop is a convenience heuristic, not a requirement. If MediaPipe's hand landmark model is missing, a hand is not found, or a crop fails, the classifier falls back to the full frame instead of stopping analysis.
+
+### Exact Iron and Wedge markings
+
+RapidOCR runs only after the five-way classifier identifies an Iron or Wedge. It reads the full working image, applies optional contrast enhancement, and only attempts sideways orientations after a normal-orientation pass fails to produce a valid marking.
+
+The normalization layer accepts golf-specific values rather than trusting arbitrary OCR text:
+
+- Iron numbers and common letter markings such as `P/PW`, `G/GW`, `A/AW`, and `S/SW` are treated as Iron designations when valid.
+- Numeric markings above 10 are treated as Wedge designations.
+- Supported wedge lofts are normalized into a player-facing wedge label.
+- Common OCR swaps are corrected only when the corrected result is valid for a golf club.
+
+If OCR is unavailable, below its configured confidence threshold, or cannot read a valid marking, SwingSight keeps the broad Iron or Wedge result. It does not guess an exact club. The response includes `club_type`, `club_number`, `exact_club`, confidence, source, and OCR metadata for local troubleshooting.
+
+### Recognition prerequisites and limitations
+
+- The preferred five-way checkpoint is `models/trained/club_type_5way.pt`.
+- `hand_landmarker.task` supports the optional hand-centered crop.
+- RapidOCR and ONNX Runtime are installed through `requirements.txt`; their pretrained OCR assets may initialize on first use.
+- Club scans can fail with glare, motion blur, an obstructed sole/face, a tiny marking, a reflective finish, or a frame that is too wide.
+- Driver, Wood, and Hybrid do not run the Iron/Wedge OCR stage.
+
+## Movement analysis and KPIs
+
+### Local pose pipeline
+
+`ModelManager` validates that OpenCV can open the uploaded video, records basic video metadata, extracts fallback frames, and attempts local pose inference.
+
+When Ultralytics and a compatible YOLO pose model are available, the pose estimator maps COCO keypoints into named landmarks, including head, shoulders, elbows, wrists, hips, knees, and ankles. The model loader checks a configured path, `models/pretrained/yolov8n-pose.pt`, and `yolov8n-pose.pt` in the working directory.
+
+The pipeline then:
+
+- Writes pose landmark rows to `outputs/experiments/pose_landmarks.csv` when landmarks are found.
+- Calculates player-facing and supporting movement measurements.
+- Builds raw and smoothed pose-overlay videos.
+- Validates generated overlays and preserves tracking-quality metadata.
+- Stores warnings and fallback status if usable pose evidence or an overlay is unavailable.
+
+### KPI reference
+
+| KPI | Meaning | Source |
+| --- | --- | --- |
+| Overall Swing Score | A local or Gemini-supplied 0-100 summary when enough evidence is available. | Coaching engine and optional Gemini structured result |
+| Kinematic Sequence | The estimated order and spacing of hip, torso, and arm movement peaks. | Pose-frame movement peaks |
+| X-Factor Separation | A 2D proxy for the shoulder/hip rotational separation during the swing. | Pose-frame shoulder and hip axes |
+| Spine Angle Maintenance | How consistently the estimated spine angle is maintained. | Pose-frame spine-angle variation |
+| Lateral Weight Shift | A 2D estimate of lateral hip movement relative to stance width. | Pose-frame hip centers and stance width |
+
+The UI classifies available KPI scores as Strong, On track, Developing, Needs work, or More data. The PDF uses a closely aligned status scale:
+
+| Score | PDF status |
+| --- | --- |
+| 80-100 | Strong |
+| 65-79 | On Track |
+| 50-64 | Developing |
+| Below 50 | Needs Focus |
+
+These are video-derived practice signals. They are not laboratory-grade biomechanics, ball-flight measurements, club speed, launch, contact, or injury diagnostics.
+
+### Other movement measurements
+
+Depending on available landmarks, SwingSight can calculate or retain:
+
+- Spine angle and spine-angle variation.
+- Shoulder rotation proxy / estimated shoulder turn.
+- Hip rotation proxy.
+- Head, hip, knee, and foot movement.
+- Hand-path distance.
+- Knee flex.
+- Lateral-shift ratio.
+- Balance, tempo, and posture-change proxies.
+
+Many of these are 2D video estimates. A value can be absent when landmarks are unavailable, and a zero can be ambiguous. The professional PDF filters questionable data; the Advanced details panel retains the raw local result for debugging.
+
+## Optional Gemini coaching
+
+Gemini is optional. Without a key, SwingSight still runs local analysis and baseline coaching.
+
+When configured, `GeminiCoachingService` sends a structured JSON evidence payload containing selected local metrics, tracking-quality summary, club label, and which fields were unavailable. It intentionally excludes:
+
+- Source video and uploaded media.
+- Raw frames and pose-landmark files.
+- Local file paths.
+- Debug artifacts and overlay files.
+
+Gemini is asked to return validated JSON with a summary, an eligible 0-100 score or `null`, score rationale, next focus, up to three strengths, up to three improvements, tips, drills, and data gaps. The service rejects invalid responses and falls back to local coaching when the key is absent, the request fails, or the response does not match the schema.
+
+### Configure Gemini
+
+Create a `.env` file in the repository root:
+
+```dotenv
+GEMINI_API_KEY=your_key_here
+```
+
+The loader accepts UTF-8 and UTF-8-with-BOM `.env` files. It reads the configured environment variable first, then `GEMINI_API_KEY` and `GOOGLE_API_KEY` as fallbacks.
+
+The example configuration defaults to:
+
+```yaml
+gemini:
+  enabled: true
+  api_key_env: GEMINI_API_KEY
+  model: gemini-3-flash-preview
+  timeout_seconds: 35
+  max_output_tokens: 4096
+```
+
+Never commit a `.env` file or a real API key. Rotate a key immediately if it is exposed.
+
+## Install and run
+
+### Requirements
+
+- A supported Python 3 interpreter.
+- A modern browser with camera permission for live capture.
+- Internet access only for first-time dependency installation, optional Gemini coaching, and any first-use OCR/model downloads required by installed runtimes.
+- Enough local disk space for Python packages, model weights, temporary videos, generated overlays, JSON results, and PDF reports.
+
+Core runtime dependencies are declared in `requirements.txt`:
+
+- Flask and Python dotenv handling.
+- OpenCV, MediaPipe, Ultralytics, PyTorch, and Torchvision.
+- NumPy, pandas, scikit-learn, Pillow, and PyYAML.
+- RapidOCR and ONNX Runtime for exact club markings.
+- ReportLab for PDF reports.
+- Requests for optional Gemini calls.
+- Pytest for automated checks.
+
+### Windows launcher
+
+1. Clone or download this repository.
 2. Double-click **Launch SwingSight.bat**.
-3. On first launch, SwingSight locates Python 3, creates a .venv environment, installs the packages in requirements.txt, and starts the dashboard.
-4. It opens the dashboard in your default browser. If it does not, visit [http://127.0.0.1:8000](http://127.0.0.1:8000).
+3. The launcher finds Python 3, creates `.venv` if needed, upgrades `pip`, installs `requirements.txt`, enables browser opening, and starts `src/run.py`.
+4. Open `http://127.0.0.1:8000` if the browser does not open automatically.
 
-The launcher checks packages on every start, so changes to requirements.txt are automatically applied.
+The Windows launcher checks and installs requirements on every start, so requirements changes are applied automatically.
 
-If it cannot find Python, install a current Python 3 release from [python.org](https://www.python.org/downloads/), then run the launcher again.
+### macOS launcher
 
-### macOS
-
-1. Download or clone this repository.
+1. Clone or download this repository.
 2. Double-click **SwingSight.app**.
-3. Allow the application if macOS requests permission, then open [http://127.0.0.1:8000](http://127.0.0.1:8000) if needed.
+3. The app opens Terminal and runs `scripts/start-macos.sh`.
+4. The script creates `.venv` and installs dependencies on the first run, then starts the local server.
+5. Open `http://127.0.0.1:8000` in a browser if it does not open automatically.
 
-### Terminal launch
+macOS may ask for permission to open the application or Terminal. The launcher requires `python3` to be available on `PATH`.
 
-Use a terminal when developing or troubleshooting.
+### Terminal launch: Windows, macOS, or Linux
 
-~~~bash
+```bash
 # From the repository root
 python -m venv .venv
 
@@ -54,253 +354,340 @@ source .venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 python src/run.py
-~~~
+```
 
-The site uses http://127.0.0.1:8000 by default. Stop it with Ctrl+C.
+The server defaults to `127.0.0.1:8000`. Stop it with `Ctrl+C`.
 
-## Configure optional Gemini coaching
+### Runtime environment variables
 
-SwingSight uses local computer-vision measurements by default. Configure Gemini only when you want expanded narrative coaching.
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `SWINGSIGHT_HOST` | `127.0.0.1` | Flask bind host. Keep the loopback default for local use. |
+| `SWINGSIGHT_PORT` | `8000` | Flask port. |
+| `SWINGSIGHT_DEBUG` | `true` | Enables Flask debug behavior unless set to `0`, `false`, or `no`. |
+| `SWINGSIGHT_OPEN_BROWSER` | unset | Opens a browser tab when set to `1`, `true`, `yes`, or `on`. The Windows launcher sets it. |
+| `GEMINI_API_KEY` | unset | Optional Gemini credential. |
+| `GOOGLE_API_KEY` | unset | Optional fallback Gemini credential. |
 
-Create a file named .env in the project root, beside README.md:
+Example:
 
-~~~dotenv
-GEMINI_API_KEY=your_key_here
-~~~
-
-Restart SwingSight after saving the file. The loader accepts UTF-8 and UTF-8-with-BOM .env files, which helps avoid a common Windows Notepad encoding issue.
-
-To confirm the current environment can see the key:
-
-~~~powershell
-.venv\Scripts\python.exe -c "from pathlib import Path; import os, sys; sys.path.insert(0, 'src'); from swingsight.config import load_dotenv; load_dotenv(Path('.env')); print('Gemini key detected' if os.getenv('GEMINI_API_KEY') else 'Gemini key not detected')"
-~~~
-
-If it is not detected, verify that:
-
-- The filename is exactly .env, not .env.txt.
-- The file is in the repository root.
-- The value is a single line in the form GEMINI_API_KEY=value, without spaces around the equals sign.
-- You restarted SwingSight after editing the file.
-
-Never commit a .env file or share an API key. Rotate a key immediately if it is exposed.
-
-## Using SwingSight
-
-1. Start the app and choose **Record new swing** or upload a video.
-2. Record from a clear, consistent side angle with your full body, hands, club, and feet in frame.
-3. Keep the camera still and avoid zooming.
-4. Submit the swing and wait for processing.
-5. Review the original video, motion overlay, Swing Score, KPI cards, Coach's Priority, and practice cues.
-
-### Recording recommendations
-
-For the most useful review:
-
-- Use one swing per clip.
-- Keep the full swing in frame from setup through follow-through.
-- Use good lighting and a contrasting background where possible.
-- Keep the camera stable and roughly hip-high.
-- Use a comparable camera angle for each progress check.
-- Center the club face or sole in the frame if club recognition matters.
-
-## KPI reference
-
-| KPI | What it measures |
-| --- | --- |
-| **Overall Swing Score** | A 0â€“100 summary of the available movement, posture, timing, and balance signals. It is most useful for comparing similar recordings over time. |
-| **Kinematic Sequence** | How efficiently the pelvis, torso, arms, and club appear to accelerate and decelerate in order. |
-| **X-Factor Separation** | The rotational difference between the hips and shoulders near the top of the backswingâ€”the coil that can contribute to speed. |
-| **Spine Angle Maintenance** | How consistently posture and spinal tilt are held from address through impact. |
-| **Lateral Weight Shift** | How body position and pressure move toward the lead side while avoiding excessive sway or thrust. |
-
-Status labels are color coded in the dashboard:
-
-- **On Track / Strong** â€” green
-- **Developing** â€” amber
-- **Needs Work / Needs Practice** â€” red
-- **More Data** â€” gray
-
-These are directional coaching signals, not laboratory-grade biomechanics measurements.
-
-## Club recognition and exact markings
-
-SwingSight classifies the submitted club image with a staged recognition workflow:
-
-~~~text
-Five-way classification: Driver | Wood | Hybrid | Iron | Wedge
-       â†“
-Optional exact marking: 1â€“9, P/A/G/S/L, or a wedge loft
-~~~
-
-The app first runs the existing five-way classifier. Driver, Wood, and Hybrid keep the existing behavior and never invoke OCR. For an Iron or Wedge, the app passes the complete uploaded image to a pretrained text detector and reader, then accepts only valid golf-club markings.
-
-Exact marking recognition uses [RapidOCR](https://github.com/RapidAI/RapidOCR) with its pretrained PP-OCR small models on ONNX Runtime. It was selected instead of a custom club-marking model because it is locally runnable, CPU compatible, and includes text detection as well as recognition. RapidOCR's toolkit is Apache-2.0 licensed; review the bundled PP-OCR model terms before a commercial deployment. The OCR engine loads once per application process. The first pass examines the full image with contrast normalization; only when it cannot find a valid high-confidence marking does it try the two sideways orientations.
-
-Required local model/runtime files:
-
-~~~text
-models/
-  trained/
-    club_type_5way.pt               # ResNet-50 five-way classifier after retraining
-    club_type_5way_cnn.pt           # compact CNN five-way reference classifier
-~~~
-
-The runtime uses the configured five-way checkpoint and can fall back to the compact `club_type_5way_cnn.pt` reference classifier when available. The inference loader remains compatible with earlier MobileNetV3-Small checkpoints, but the updated training notebook creates a ResNet-50 checkpoint and requires a CUDA-capable GPU to train practically. `rapidocr` and `onnxruntime` are installed by `requirements.txt`. The default backend is RapidOCR with PP-OCR small models; change `club_recognition.marking_ocr.backend` if a compatible replacement reader is added later. The current reader supports Iron numbers `2` through `9`, wedge labels `P/PW`, `A/AW`, `G/GW`, `S/SW`, and `L/LW`, plus recognized lofts from `46` to `64` degrees. It normalizes common OCR swaps such as `S`/`5`, `G`/`6`, `B`/`8`, `O`/`0`, and `I`/`1` only when the result is valid for the detected club family.
-
-The default exact-marking threshold is `0.70` (`club_recognition.marking_ocr.min_confidence`). A reading below that threshold, an invalid label, unavailable OCR runtime, or no text leaves the category as Iron or Wedge and returns `exact_club: null`; the application does not guess. Inspect `club_details` in the analysis response for `club_type`, `club_number`, `exact_club`, OCR confidence, source, and the text box.
-
-On a typical CPU, a normal Iron/Wedge scan is one compact OCR pass after the five-way classifier; sideways fallback performs two additional passes only when needed. Tiny, glared, blurred, obscured, decorative, or highly reflective markings can still be unreadable. A centered, well-lit view of the club head or grip butt gives the best result.
-
-## Training the five-way club classifier
-
-The training workflow deliberately keeps one master image library instead of duplicating training images per model.
-
-~~~text
-data/club_training/
-  images/
-    ... original club images ...
-  annotations/
-    club_manifest.csv
-  derived/                          # generated by notebooks
-~~~
-
-The manifest uses one row per image:
-
-~~~text
-image_path,split,five_way_label,marking_label,mark_x,mark_y,mark_w,mark_h
-~~~
-
-The `marking_*` columns remain for historical experiments; they are not needed for the pretrained OCR path and should not be used to train a replacement marking model for this feature.
-
-- **image_path:** path relative to data/club_training/images
-- **split:** train or val
-- **five_way_label:** driver, wood, hybrid, iron, or wedge
-- **marking_***: normalized bounding box around the readable number, letter, or loft
-- **marking_label:** one of 1â€“9, p/a/g/s/l, or loft labels 50/52/54/56/58/60
-
-Train the five-way classifier when the broad club detector needs improvement:
-
-1. **notebooks/03_train_five_way_club_cnn.ipynb** creates `models/trained/club_type_5way.pt` with a ResNet-50 classifier.
-
-Keep images from a single source capture in one split only. Otherwise, nearly identical images can appear in both training and validation, which gives misleadingly strong results.
-
-## Configuration
-
-Use config.example.yaml as the reference for model paths, thresholds, processing limits, and Gemini settings.
-
-| Setting | Default |
-| --- | --- |
-| Local host | 127.0.0.1 |
-| Local port | 8000 |
-| Maximum video duration | 12 seconds |
-| Pose backend | MediaPipe |
-| Gemini environment variable | GEMINI_API_KEY |
-| Five-way club model path | `models/trained/club_type_5way.pt` (falls back to `models/trained/club_type_5way_cnn.pt` when available) |
-
-For example, run a development server on a different port:
-
-~~~powershell
+```powershell
 $env:SWINGSIGHT_PORT = "8001"
 $env:SWINGSIGHT_DEBUG = "false"
 python src/run.py
-~~~
+```
+
+## Configuration
+
+`swingsight.config.load_config()` uses this order:
+
+1. Built-in defaults in `src/swingsight/config.py`.
+2. `config.yaml` in the repository root, when present.
+3. Otherwise `config.example.yaml`.
+
+The selected YAML file is deep-merged onto the built-in defaults, so a partial `config.yaml` only needs to contain values you want to change.
+
+### Important configuration groups
+
+| Group | What it controls |
+| --- | --- |
+| `paths` | Local `data`, `models`, `uploads`, `outputs`, and `reports` directories. |
+| `pose_estimation` | Pose confidence and optional model path. |
+| `club_localization` | Hand-based ROI crop, MediaPipe hand model path, confidence, crop scale, and merge behavior. |
+| `club_recognition` | Five-way checkpoint, confidence thresholds, and legacy checkpoint paths. |
+| `club_recognition.marking_ocr` | OCR backend, confidence threshold, image sizing, contrast, sharpening, and sideways fallback passes. |
+| `metrics` | Metric smoothing and normalization settings. |
+| `gemini` | Gemini enablement, API-key environment variable, model, timeout, and output budget. |
+| `preprocessing` | Adaptive-contrast behavior for frames and club images. |
+| `feedback` | Per-club baseline feedback thresholds. |
+| `app` | Local host/port, key-frame stride, and maximum-video target. |
+
+Copy the example before changing it:
+
+```bash
+cp config.example.yaml config.yaml
+```
+
+On Windows PowerShell:
+
+```powershell
+Copy-Item config.example.yaml config.yaml
+```
+
+### Example customizations
+
+```yaml
+club_recognition:
+  five_way_cnn_min_confidence: 0.70
+  marking_ocr:
+    min_confidence: 0.75
+
+gemini:
+  enabled: false
+
+app:
+  local_web_port: 8001
+```
+
+`src/run.py` currently reads the Flask host and port from the `SWINGSIGHT_HOST` and `SWINGSIGHT_PORT` environment variables, so set those variables when changing the actual development-server bind address.
+
+## Local API
+
+The browser uses the following local endpoints. They are not authenticated public APIs and should remain behind the local loopback server unless you add appropriate production security.
+
+| Method | Endpoint | Input | Result |
+| --- | --- | --- | --- |
+| `GET` | `/` | None | Landing and capture page. |
+| `GET` | `/analysis/<analysis_id>` | Path ID | Completed-review page shell. |
+| `POST` | `/api/upload-video` | Multipart field `video` | Saves a video and returns `upload_id`, local file name, and preview URL. |
+| `POST` | `/api/upload-club-image` | Multipart field `image` | Saves a club image and returns its upload metadata. |
+| `POST` | `/api/record-swing` | Multipart field `video` | Saves a browser-recorded clip and returns upload metadata. |
+| `POST` | `/api/club-detect` | Multipart field `frame` | Runs club recognition on a still frame. |
+| `POST` | `/api/body-check` | Multipart field `frame` | Checks whether key body landmarks are visible. |
+| `POST` | `/api/analyze` | JSON described below | Analyzes an uploaded video, optionally with a separate club image. |
+| `POST` | `/api/analyze-swing` | JSON described below | Analyzes a recorded swing using the recorded club category. |
+| `GET` | `/api/results/<analysis_id>` | Path ID | Returns the full persisted result. |
+| `GET` | `/api/artifacts/<analysis_id>` | Path ID | Returns overlay files and advanced metrics. |
+| `GET` | `/api/analysis-assets/<analysis_id>` | Path ID | Returns overlay files, advanced metrics, and summary. |
+| `POST` | `/api/reports/<analysis_id>` | None | Generates the PDF and returns its local download URL. |
+| `GET` | `/uploads/<filename>` | Path | Serves a saved upload. |
+| `GET` | `/outputs/<filename>` | Path | Serves a generated overlay/output. |
+| `GET` | `/reports/<filename>` | Path | Downloads a PDF report only. Non-PDF report requests return 404. |
+
+### Analysis request bodies
+
+```json
+{
+  "video_upload_id": "returned-by-upload-video",
+  "club_category": "8 Iron",
+  "club_image_upload_id": "optional-upload-club-image-id"
+}
+```
+
+`/api/analyze-swing` accepts `video_upload_id` and `club_category`; it does not require `club_image_upload_id` because the live flow performs its club scan before recording.
+
+Successful analysis results include fields such as:
+
+```json
+{
+  "status": "success",
+  "analysis_id": "...",
+  "club": "8 Iron",
+  "swing_score": 78,
+  "score_label": "Improving",
+  "next_focus": "Keep a smooth tempo through impact.",
+  "strengths": [],
+  "improvements": [],
+  "advanced_metrics": {},
+  "tracking": {},
+  "visualization": {},
+  "overlay_files": [],
+  "warnings": []
+}
+```
+
+The exact fields are intentionally richer than the player-facing UI. `advanced_metrics`, `tracking`, `model_outputs`, `debug`, and related fields are useful for development; do not treat them as stable third-party API contracts without versioning them first.
+
+## Storage, privacy, and security
+
+### Local files
+
+| Location | Contents |
+| --- | --- |
+| `uploads/` | Browser uploads, recorded clips, club images, and captured frames. |
+| `outputs/` | Persisted `analysis_<id>.json` results, overlays, experiments, pose landmarks, fallback frames, and diagnostics. |
+| `reports/` | Generated PDF coaching reports. |
+| `data/` | Raw and processed local datasets used by training/experiments. |
+| `models/` | Local trained or reference model checkpoints. |
+
+These directories can contain personal videos and derived movement data. Keep them out of public repositories and back them up or delete them according to your own privacy policy. The repository's `.gitignore` should continue to exclude local media, virtual environments, credentials, and large experimental data.
+
+### Gemini boundary
+
+When Gemini is enabled, SwingSight transmits structured local evidence to the Gemini API. It does **not** intentionally transmit the uploaded swing video, raw frames, local file paths, or debug artifacts. Review the running configuration and your network environment before using Gemini with sensitive data.
+
+### Local server warning
+
+The bundled Flask server is for local development. It does not provide production authentication, rate limiting, multi-user isolation, encrypted remote transport, or hardened file access. Do not expose it directly to the internet.
+
+## Models, data, and training
+
+### Bundled and expected runtime assets
+
+| Asset | Purpose |
+| --- | --- |
+| `models/trained/club_type_5way.pt` | Preferred ResNet-50 five-way club classifier. |
+| `models/trained/club_type_5way_cnn.pt` | Compact five-way CNN reference/fallback checkpoint when available. |
+| `yolov8n-pose.pt` | Local YOLO pose candidate used by the pose runtime. |
+| `hand_landmarker.task` | MediaPipe hand-landmark asset used for optional club-centered cropping. |
+| RapidOCR PP-OCR models | Pretrained OCR assets used for exact Iron/Wedge readings. |
+
+The five-way loader validates that a checkpoint is self-describing: it expects the SwingSight checkpoint format, task name, class names, input size, normalization values, and model weights. It supports the current ResNet-50 format and compatible earlier MobileNetV3-Small checkpoints.
+
+Legacy broad-category, Iron-number, and wood-type checkpoints remain supported for older installations, but the preferred live workflow is the five-way checkpoint plus RapidOCR for Iron/Wedge markings.
+
+### Training data layout
+
+```text
+data/club_training/
+  images/                         # original club images
+  annotations/
+    club_manifest.csv
+  derived/                        # notebook-generated material
+```
+
+The historical manifest format is:
+
+```text
+image_path,split,five_way_label,marking_label,mark_x,mark_y,mark_w,mark_h
+```
+
+- `image_path` is relative to `data/club_training/images`.
+- `split` is normally `train` or `val`.
+- `five_way_label` is `driver`, `wood`, `hybrid`, `iron`, or `wedge`.
+- The `marking_*` columns are retained for historical experiments; production exact-marking recognition uses pretrained OCR instead of a custom marking model.
+
+Keep images from one source capture in a single split. Similar augmented images across train and validation sets can leak near-duplicates and make validation accuracy misleading.
+
+### Notebooks and scripts
+
+| Path | Purpose |
+| --- | --- |
+| `notebooks/01_golfdb_video_model_training.ipynb` | Golf-swing video research and training exploration. |
+| `notebooks/02_authorized_driver_dataset_builder.ipynb` | Builds authorized driver-head datasets from approved direct-URL manifests; it does not scrape the USGA database. |
+| `notebooks/03_train_five_way_club_cnn.ipynb` | Trains the ResNet-50 five-way club checkpoint. |
+| `scripts/train_club_cnn.py` | Script support for club-CNN training. |
+
+The five-way ResNet-50 training workflow is intended for a CUDA-capable GPU. Inference can run locally on a compatible CPU or GPU runtime, subject to installed packages and model availability.
+
+### Reference images
+
+`assets/club-reference-images/` contains openly licensed real golf-club photographs organized by recognition taxonomy. They are reference material, not a production training dataset. See that directory's README for source and license details.
 
 ## Project structure
 
-~~~text
+```text
 SwingSight-AI/
-â”œâ”€â”€ Launch SwingSight.bat          # Windows launcher
-â”œâ”€â”€ SwingSight.app/                # macOS launcher
-â”œâ”€â”€ config.example.yaml            # configuration reference
-â”œâ”€â”€ requirements.txt               # runtime and test dependencies
-â”œâ”€â”€ src/
-â”‚   â”œâ”€â”€ run.py                     # Flask entry point
-â”‚   â”œâ”€â”€ backend/                   # analysis and coaching services
-â”‚   â”œâ”€â”€ swingsight/                # configuration and vision utilities
-â”‚   â””â”€â”€ webapp/                    # dashboard routes, templates, and assets
-â”œâ”€â”€ notebooks/                     # model-training notebooks
-â”œâ”€â”€ scripts/                       # launcher and training support
-â”œâ”€â”€ models/                        # reference and locally trained checkpoints
-â”œâ”€â”€ data/                          # local working and training data
-â”œâ”€â”€ uploads/                       # videos created at runtime
-â”œâ”€â”€ outputs/                       # overlays and analysis outputs
-â”œâ”€â”€ reports/                       # generated reports
-â””â”€â”€ tests/                         # automated checks
-~~~
-
-Videos, generated outputs, model checkpoints, virtual environments, and .env files should stay local unless you explicitly intend to version them.
+├── Launch SwingSight.bat          # Windows entry point
+├── SwingSight.app/                # macOS Terminal launcher
+├── config.example.yaml            # configuration reference
+├── requirements.txt               # runtime and test dependencies
+├── hand_landmarker.task           # hand-crop model asset
+├── yolov8n-pose.pt                # local pose model candidate
+├── src/
+│   ├── run.py                     # local Flask entry point
+│   ├── backend/services/
+│   │   ├── model_manager.py       # video validation, pose/club pipeline, overlays
+│   │   ├── coaching_engine.py     # local coach-style feedback
+│   │   └── overlay_generator.py   # raw/smoothed overlay output
+│   ├── swingsight/
+│   │   ├── metrics.py             # 2D movement and KPI calculations
+│   │   ├── pose_estimation.py     # YOLO keypoint mapping
+│   │   ├── club_recognition.py    # five-way and exact club workflow
+│   │   ├── club_marking_ocr.py    # RapidOCR integration
+│   │   ├── club_localization.py   # hand-centered ROI crop
+│   │   └── config.py              # defaults, YAML, and .env loading
+│   └── webapp/
+│       ├── routes/dashboard.py    # browser and JSON routes
+│       ├── services/              # orchestration, Gemini, PDF report
+│       ├── templates/             # landing and review pages
+│       └── static/                # CSS and browser JavaScript
+├── models/                        # checkpoints and model documentation
+├── data/                          # local data and training inputs
+├── uploads/                       # runtime media uploads
+├── outputs/                       # results, overlays, experiments, diagnostics
+├── reports/                       # generated PDF reports
+├── notebooks/                     # research and training notebooks
+├── scripts/                       # launch/training support
+└── tests/                         # automated unit and smoke checks
+```
 
 ## Development and testing
 
-Install project dependencies, then run the focused test suite from the repository root:
+### Run tests
 
-~~~bash
-python -m pytest -q
-~~~
+```bash
+PYTHONPATH=src pytest -q
+```
 
-Useful commands:
+Useful focused commands:
 
-~~~bash
-# Run the local app
-python src/run.py
+```bash
+# PDF generation and download behavior
+PYTHONPATH=src pytest -q tests/test_reports.py
 
-# Run a specific test module
-python -m pytest tests/<test_file>.py -q
+# Club recognition and OCR normalization
+PYTHONPATH=src pytest -q tests/test_club_recognition.py tests/test_club_marking_ocr.py
 
-# Confirm the active interpreter
-python --version
-~~~
+# Basic movement-metric smoke test
+PYTHONPATH=src pytest -q tests/test_smoke.py
+```
 
-The bundled Flask server is for local development. Do not expose it directly to the internet as a production deployment.
+The tests cover core metric keys, club classifier/OCR branching and normalization, model-manager club replacement behavior, Gemini schema handling, and PDF generation/download/formatting helpers.
+
+If an active project-root `.env` contains a real Gemini key, isolate or temporarily move it before running offline Gemini tests. The Gemini service deliberately reloads the project `.env`, so an active key can cause a test intended to verify the no-key path to attempt a network request.
+
+### Working on the frontend
+
+- Landing-page behavior: `src/webapp/templates/dashboard.html`, `src/webapp/static/js/dashboard.js`, and `src/webapp/static/css/dashboard.css`.
+- Review-page behavior: `src/webapp/templates/analysis.html` and `src/webapp/static/js/analysis.js`.
+- Templates use cache-busting version parameters on CSS/JS links. Bump the relevant parameter after an asset change when a browser keeps an older file.
+- Keyboard focus styling, reduced-motion handling, responsive stacking, and local-only capture are part of the current UI implementation.
+
+### Working on the report
+
+`src/webapp/services/report_service.py` owns the PDF output. Its helpers cover safe numeric conversion, validation, score/degree/pixel/ratio formatting, metric labels, text sanitization and wrapping, short report IDs, and club-aware filenames. Keep the report data-driven; do not expose raw analysis JSON, full UUIDs, non-finite values, or unbounded text in player-facing sections.
 
 ## Troubleshooting
 
-### Python is not found
+### Python or dependencies are missing
 
-Install Python 3 from [python.org](https://www.python.org/downloads/), reopen Command Prompt or PowerShell, and launch SwingSight again.
+Install a current Python 3 release, then rerun the launcher or recreate `.venv` and install `requirements.txt`. On Windows, the launcher searches `py -3` first and then `python`.
 
-### Browser does not open automatically
+### The browser does not open
 
-Open [http://127.0.0.1:8000](http://127.0.0.1:8000) manually. If you set SWINGSIGHT_PORT, use that port instead.
+Visit `http://127.0.0.1:8000` manually. Set `SWINGSIGHT_OPEN_BROWSER=true` when launching from a terminal if you want `src/run.py` to open a tab.
 
-### Gemini key is not configured
-
-Follow the **Configure optional Gemini coaching** section. The key must be in the project-root .env file, and SwingSight must be restarted after every change.
-
-### A club model is missing
-
-This limits club-recognition precision but does not block regular video analysis. Train the models using the notebooks above or place validated model files in the configured locations.
-
-### OpenH264 or VideoWriter errors on Windows
-
-Errors like:
-
-~~~text
-Failed to load OpenH264 library
-VIDEOIO/FFMPEG: Failed to initialize VideoWriter
-~~~
-
-mean that OpenCV/FFmpeg could not initialize an H.264 encoder. The analysis may still finish, but an overlay video can be absent or incomplete.
-
-First verify the overlay output and browser playback. If overlay videos consistently fail, use a compatible OpenCV/FFmpeg build or a trusted local H.264 encoder. Any DLL must match the installed Python and OpenCV architecture, normally 64-bit on modern Windows. Do not download arbitrary DLLs from untrusted sources.
-
-### The dashboard still shows old styling after an update
+### The dashboard shows old CSS or JavaScript
 
 Hard refresh the browser:
 
-- **Windows:** Ctrl+F5 or Ctrl+Shift+R
-- **macOS:** Cmd+Shift+R
+- Windows: `Ctrl+F5` or `Ctrl+Shift+R`
+- macOS: `Cmd+Shift+R`
 
-Then restart SwingSight.
+Then restart SwingSight. Check the cache-busting asset version in the relevant template if the issue persists.
 
-## Privacy and security
+### The camera cannot open
 
-- SwingSight is intended to run locally on your computer.
-- Uploaded videos, generated overlays, reports, and model artifacts are local project data.
-- With Gemini enabled, the default configuration is designed to send structured local coaching measurementsâ€”not the source video, raw frames, file paths, or debug artifacts.
-- Keep .env files, API keys, and personal swing videos out of public repositories.
+Use HTTPS or `localhost`/`127.0.0.1`, grant camera permission to the browser, close other apps using the camera, and try the upload path if live capture remains unavailable.
+
+### Club recognition is unavailable or uncertain
+
+Confirm that `models/trained/club_type_5way.pt` exists and that PyTorch/Torchvision can load it. Show the club face or sole close to the camera, reduce glare, hold it steady, and avoid cropping the club head out of frame. Iron/Wedge OCR needs a readable marking; it is normal for the result to remain the broad club family when a number, letter, or loft cannot be confirmed.
+
+### Pose tracking or overlay generation fails
+
+Use a short, readable video with the full body in frame. Confirm that OpenCV can open the format and that the YOLO pose model and Ultralytics runtime are available. Check the Advanced details section and `outputs/` for warnings, tracking metadata, and generated assets.
+
+### Windows OpenH264 or VideoWriter errors
+
+Messages such as the following usually mean OpenCV/FFmpeg could not initialize an H.264 encoder:
+
+```text
+Failed to load OpenH264 library
+VIDEOIO/FFMPEG: Failed to initialize VideoWriter
+```
+
+The analysis may still finish, but an overlay can be absent or incomplete. Verify browser playback, use a compatible OpenCV/FFmpeg build or trusted local encoder, and ensure any native library matches the installed Python/OpenCV architecture. Do not download arbitrary DLLs from untrusted sources.
+
+### Gemini is not configured
+
+Add `GEMINI_API_KEY` to the project-root `.env`, confirm the filename is exactly `.env` rather than `.env.txt`, restart the app, and do not put spaces around the equals sign. The app remains usable without Gemini.
+
+### The PDF report is missing
+
+Open the completed review and use **Download PDF Report**. Check that `reports/` is writable and inspect the local app logs for ReportLab errors. Only `.pdf` files are served from the reports route.
 
 ## License and contributions
 
-SwingSight AI is an evolving project. Add an explicit license and contribution policy before redistributing, deploying, or accepting external contributions.
+SwingSight AI is an evolving project. Add an explicit license, contribution policy, data-governance policy, and production security design before redistributing, deploying publicly, or accepting external contributions.
