@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}?v=20260727-hero-complete" />
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}?v=20260727-landing-minimal-v2" />
   </head>
   <body>
     <div class="page-shell start-page">
@@ -21,26 +21,25 @@
           <div class="welcome-copy">
             <p class="eyebrow">Your personal swing coach</p>
             <h1>Better swings.<br /><span>Real progress.</span></h1>
-            <p class="lead">Record a swing on the range or bring in a video.<br />We’ll turn it into simple, useful feedback.</p>
-            <div class="quick-steps" aria-label="How it works"><span><b>1</b> Capture</span><span><b>2</b> Analyze</span><span><b>3</b> Improve</span></div>
+            <p class="lead">Upload or record your golf swing and receive clear, coach-style feedback in under a minute.</p>
           </div>
           <aside class="swing-today">
-            <p class="eyebrow">Analysis complete</p>
-            <div class="review-swing-status"><div class="swing-orbit" aria-hidden="true"><span>✓</span></div><div class="review-status-copy"><strong>Your swing<br />is ready</strong><span>Review your motion, key checkpoints, and coaching feedback.</span><a class="review-report-button" href="#actionHeading">View swing report <b aria-hidden="true">→</b></a></div></div>
-            <div class="today-meta"><span><i aria-hidden="true">◷</i> Time needed <strong>Less than 1 min</strong></span><span><i aria-hidden="true">↗</i> Feedback <strong>Motion + coaching</strong></span></div>
+            <p class="eyebrow">SwingSight AI</p>
+            <div class="analysis-intro"><h2>Your swing, clearly explained.</h2><p>SwingSight analyzes your golf swing video and turns complex motion into simple, personalized coaching feedback.</p></div>
+            <ul class="feature-benefits"><li>See key positions</li><li>Understand what to improve</li><li>Practice with a clear focus</li></ul>
           </aside>
         </section>
         <section class="action-section" aria-labelledby="actionHeading">
           <div class="section-heading"><div><p class="eyebrow">Start here</p><h2 id="actionHeading">How would you like to review your swing?</h2></div><p>Choose the option that fits your moment.</p></div>
           <div class="option-grid">
-            <article class="option-card upload-card">
+            <article id="uploadCard" class="option-card upload-card">
               <div class="option-icon" aria-hidden="true">↑</div>
               <div><p class="card-kicker">From your camera roll</p><h3>Upload a swing</h3><p>Have a video already? Tell us your club and we’ll handle the rest.</p></div>
               <div class="club-field"><label for="uploadClubSelect">Club used</label><select id="uploadClubSelect" class="club-select"><option value="">Choose your club</option><option value="Driver">Driver</option><option value="Wood">Fairway Wood</option><option value="Hybrid">Hybrid</option><option value="Iron">Iron</option><option value="Wedge">Wedge</option></select></div>
               <div id="uploadClubDetailField" class="club-field hidden"><label for="uploadClubDetailSelect">Exact club</label><select id="uploadClubDetailSelect" class="club-select" disabled aria-describedby="uploadClubDetailHint"><option value="">Choose your club first</option></select><p id="uploadClubDetailHint" class="club-field-hint">Choose the number or marking printed on your club.</p></div>
               <div class="option-actions"><input id="uploadInput" class="hidden-input" type="file" accept="video/*" /><button id="uploadTrigger" class="button primary" disabled>Choose a video <span>→</span></button></div>
             </article>
-            <article class="option-card record-card">
+            <article id="recordCard" class="option-card record-card">
               <div class="option-icon option-icon--dark" aria-hidden="true">◉</div>
               <div><p class="card-kicker">On the range</p><h3>Record a swing</h3><p>Use your camera for an easy guided capture. Our club models check the club type, then read its number or loft before you swing.</p></div>
               <div class="record-tip"><span>✦</span> Best results: set your phone at waist height, facing your side.</div>
